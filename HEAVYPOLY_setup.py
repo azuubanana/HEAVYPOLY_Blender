@@ -559,8 +559,10 @@ class HP_OT_setup_reset_keymap(Operator):
 
     def draw(self, context):
         col = self.layout.column()
-        col.label(text="Any shortcuts you changed yourself will be lost.",
+        col.label(text="Blender's keymap goes back to factory state,",
                   icon='ERROR')
+        col.label(text="then HEAVYPOLY is applied on top.")
+        col.label(text="Any shortcuts you changed yourself will be lost.")
         col.separator()
         col.label(text="Your keymap is auto-saved first.", icon='INFO')
         col.label(text="Undo with Load Auto-Saved Keymap.")
@@ -575,6 +577,14 @@ class HP_OT_setup_reset_keymap(Operator):
                 keyconfigs.active = stock
             except Exception as e:
                 print("[HEAVYPOLY] could not activate the stock keyconfig: %r" % (e,))
+
+        # Put Blender's own keymap back to factory state as well. Without this,
+        # anything deleted from the stock keymap stayed deleted and no amount
+        # of re-registering HEAVYPOLY would bring it back.
+        try:
+            bpy.ops.preferences.keyconfig_restore()
+        except Exception as e:
+            print("[HEAVYPOLY] keyconfig_restore failed: %r" % (e,))
 
         try:
             from . import HEAVYPOLY_HOTKEYS
@@ -613,6 +623,24 @@ class HP_OT_setup_load_autosave(Operator):
         if imported is not None:
             context.window_manager.keyconfigs.active = imported
         self.report({'INFO'}, "Auto-saved keymap restored.")
+        return {'FINISHED'}
+
+
+class HP_OT_setup_open_config(Operator):
+    """Open the folder where Blender keeps its settings"""
+    bl_idname = "hp.setup_open_config"
+    bl_label = "Open Blender Settings Folder"
+
+    def execute(self, context):
+        # Two levels up from .../<version>/config is the folder holding every
+        # installed version. Deleting the version folder is the real reset.
+        folder = os.path.dirname(os.path.dirname(_config_dir()))
+        try:
+            bpy.ops.wm.path_open(filepath=folder)
+        except Exception as e:
+            self.report({'ERROR'}, "Could not open %s: %r" % (folder, e))
+            return {'CANCELLED'}
+        self.report({'INFO'}, folder)
         return {'FINISHED'}
 
 
@@ -757,6 +785,11 @@ class HEAVYPOLY_Preferences(AddonPreferences):
             col.separator()
             col.operator("hp.setup_restore", icon='TRASH')
 
+            col.separator()
+            col.operator("hp.setup_open_config", icon='FILE_FOLDER')
+            box.label(text="Close Blender, then delete the version folder "
+                           "for a full reset.", icon='ERROR')
+
             if not os.path.exists(_backup_path()):
                 box.label(text="No backup yet. One is made the first time "
                                "you set up.", icon='INFO')
@@ -774,6 +807,7 @@ classes = (
     HP_OT_setup_cleanup,
     HP_OT_setup_reset_keymap,
     HP_OT_setup_load_autosave,
+    HP_OT_setup_open_config,
     HP_OT_setup_restore,
     HEAVYPOLY_Preferences,
 )

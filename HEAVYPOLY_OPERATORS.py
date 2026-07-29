@@ -11,6 +11,9 @@ bl_info = {
     }
 
 import bpy
+from mathutils import Vector
+import math
+import os
 import bmesh
 from bpy.types import Menu
 from bpy.types import Operator
@@ -684,7 +687,137 @@ class HP_OT_toggle_symmetry(bpy.types.Operator):
         return {'CANCELLED'}
 
 
+# ---------------------------------------------------------------- clipboard
+
+class HP_OT_paste_image_plane(bpy.types.Operator):
+    """Paste the image on the clipboard as a plane facing front"""
+    bl_idname = "object.hp_paste_image_plane"
+    bl_label = "Paste Image as Plane"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    height: bpy.props.FloatProperty(
+        name="Height",
+        description="Height of the plane in metres",
+        default=2.0,
+        min=0.001,
+    )
+    offset: bpy.props.FloatProperty(
+        name="Offset",
+        description="Distance in front of the selected object",
+        default=1.0,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'OBJECT'
+
+    def _grab_clipboard(self):
+        before = set(bpy.data.images.keys())
+        try:
+            bpy.ops.image.clipboard_paste()
+        except Exception as e:
+            print("[HEAVYPOLY] clipboard paste failed: %r" % (e,))
+            return None
+        new_names = set(bpy.data.images.keys()) - before
+        if not new_names:
+            return None
+        return bpy.data.images[new_names.pop()]
+
+    def _store_image(self, image):
+        """Write next to the .blend when saved, otherwise pack it in.
+
+        Either way the image survives closing Blender, which the raw clipboard
+        paste does not.
+        """
+        blend_path = bpy.data.filepath
+        if not blend_path:
+            try:
+                image.pack()
+                print("[HEAVYPOLY] image packed into the .blend")
+            except Exception as e:
+                print("[HEAVYPOLY] could not pack the image: %r" % (e,))
+            return
+
+        folder = os.path.join(os.path.dirname(blend_path), "textures")
+        try:
+            os.makedirs(folder, exist_ok=True)
+            name = bpy.path.clean_name(image.name) or "pasted"
+            target = os.path.join(folder, name + ".png")
+            index = 1
+            while os.path.exists(target):
+                target = os.path.join(folder, "%s_%03d.png" % (name, index))
+                index += 1
+            image.filepath_raw = target
+            image.file_format = 'PNG'
+            image.save()
+            print("[HEAVYPOLY] image saved to %s" % target)
+        except Exception as e:
+            print("[HEAVYPOLY] could not save the image, packing instead: %r" % (e,))
+            try:
+                image.pack()
+            except Exception:
+                pass
+
+    def _make_material(self, image):
+        material = bpy.data.materials.new(name=image.name)
+        material.use_nodes = True
+        material.blend_method = 'BLEND' if image.depth in (32, 64) else 'OPAQUE'
+
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+        nodes.clear()
+
+        output = nodes.new('ShaderNodeOutputMaterial')
+        output.location = (300, 0)
+        emission = nodes.new('ShaderNodeEmission')
+        emission.location = (60, 0)
+        texture = nodes.new('ShaderNodeTexImage')
+        texture.location = (-260, 0)
+        texture.image = image
+
+        links.new(texture.outputs['Color'], emission.inputs['Color'])
+        links.new(emission.outputs['Emission'], output.inputs['Surface'])
+        try:
+            links.new(texture.outputs['Alpha'], output.inputs['Surface'])
+            links.remove(output.inputs['Surface'].links[0])
+        except Exception:
+            pass
+        return material
+
+    def execute(self, context):
+        image = self._grab_clipboard()
+        if image is None:
+            self.report({'WARNING'}, "No image on the clipboard.")
+            return {'CANCELLED'}
+
+        self._store_image(image)
+
+        target = context.active_object
+        if target is not None and target.select_get():
+            # In front of the object, along its local -Y.
+            location = target.matrix_world @ Vector((0.0, -self.offset, 0.0))
+        else:
+            location = context.scene.cursor.location.copy()
+
+        bpy.ops.mesh.primitive_plane_add(size=1.0, align='WORLD', location=location)
+        plane = context.active_object
+        plane.name = image.name
+
+        # Stand it up facing -Y, so it reads correctly in front view.
+        plane.rotation_euler = (math.radians(90.0), 0.0, 0.0)
+
+        width, height = image.size
+        aspect = (width / height) if height else 1.0
+        plane.scale = (self.height * aspect, self.height, 1.0)
+
+        plane.data.materials.append(self._make_material(image))
+
+        self.report({'INFO'}, "Pasted %s (%dx%d)" % (image.name, width, height))
+        return {'FINISHED'}
+
+
 classes = (
+    HP_OT_paste_image_plane,
     HP_OT_toggle_symmetry,
     HP_OT_SaveWithoutPrompt,
     HP_OT_RevertWithoutPrompt,

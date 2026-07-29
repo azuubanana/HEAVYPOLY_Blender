@@ -151,6 +151,7 @@ def Keymap_Heavypoly():
     kmi = km.keymap_items.new("wm.call_menu_pie", k_menu, 'PRESS',ctrl=True, alt=True).properties.name="HP_MT_pie_rotate90"
     kmi = km.keymap_items.new("wm.call_menu_pie", 'V', 'PRESS').properties.name="HP_MT_pie_view"
     kmi = km.keymap_items.new('wm.call_menu_pie', k_menu,'PRESS',ctrl=True, shift=True).properties.name="HP_MT_pie_pivots"
+    kmi = km.keymap_items.new('object.hp_paste_image_plane', 'V', 'PRESS', ctrl=True, alt=True)
     kmi = km.keymap_items.new("wm.call_menu_pie","Z","PRESS").properties.name="HP_MT_pie_shading"
     kmi = km.keymap_items.new("wm.call_menu_pie","D","PRESS",ctrl=True, shift=True).properties.name="HP_MT_pie_specials"
     kmi = km.keymap_items.new("wm.call_menu_pie","ONE","PRESS").properties.name="HP_MT_pie_modifiers"
@@ -379,6 +380,39 @@ def Keymap_Heavypoly_Symmetry():
             kmi_props_setattr(kmi.properties, 'axis', axis)
 
 
+
+def disable_pie_kmi(km, menu_name, type, value, shift=False, ctrl=False,
+                    alt=False, retries=10):
+    """Disable a stock pie menu by the menu it opens.
+
+    wm.call_menu_pie is used by both Blender and HEAVYPOLY, so matching on the
+    operator alone would switch off our own pie as well.
+    """
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.get('Blender')
+    keymap = kc.keymaps.get(km) if kc else None
+    if keymap is None:
+        print("[HEAVYPOLY] keymap '%s' not found - skipped" % km)
+        return
+
+    for kmi in keymap.keymap_items:
+        if kmi.idname != 'wm.call_menu_pie':
+            continue
+        if (kmi.type, kmi.value, kmi.shift, kmi.ctrl, kmi.alt) != (type, value, shift, ctrl, alt):
+            continue
+        if getattr(kmi.properties, 'name', None) != menu_name:
+            continue
+        kmi.active = False
+        print("Disabled pie", menu_name)
+        return
+
+    if retries > 0:
+        bpy.app.timers.register(
+            lambda: disable_pie_kmi(km, menu_name, type, value, shift, ctrl,
+                                    alt, retries - 1),
+            first_interval=0.1)
+
+
 #Function to disable keymap confict
 def disable_default_kmi(km=None, idname=None, retries=1):
     wm = bpy.context.window_manager
@@ -515,6 +549,14 @@ def register():
     disable_default_kmi('Frames', 'screen.animation_play')
 
     disable_default_kmi('Mesh', 'wm.call_menu')
+    # E is HEAVYPOLY's Extrude to Cursor. Blender puts its own extrude on the
+    # same key in the same keymap, so both fired and the new vertex followed
+    # the mouse instead of staying put.
+    disable_specific_kmi('Mesh', 'view3d.edit_mesh_extrude_move_normal',
+                         'E', 'PRESS', False, False, False)
+    # Z is HEAVYPOLY's shading pie; Blender's own shading pie sits on the same
+    # key. Matched by menu name so we don't switch off our own.
+    disable_pie_kmi('3D View', 'VIEW3D_MT_shading_pie', 'Z', 'PRESS')
 
     disable_specific_kmi('Sculpt', 'paint.brush_select','V','PRESS',False,False,False)
     

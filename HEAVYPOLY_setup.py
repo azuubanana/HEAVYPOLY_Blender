@@ -124,6 +124,14 @@ def _append_workspaces(report=None):
             report({'ERROR'}, "%s is missing from the add-on." % STARTUP_FILE)
         return []
 
+    # Anything already called "HP ..." means a previous Apply already ran.
+    existing = [ws for ws in bpy.data.workspaces
+                if ws.name.startswith(WORKSPACE_PREFIX)]
+    if existing:
+        if report:
+            report({'INFO'}, "Workspaces already present.")
+        return existing
+
     before = {ws.name for ws in bpy.data.workspaces}
     try:
         with bpy.data.libraries.load(path, link=False) as (data_from, data_to):
@@ -370,7 +378,70 @@ class HP_OT_setup_load_keymap(Operator):
         except Exception as e:
             self.report({'ERROR'}, "Could not load the keymap: %r" % (e,))
             return {'CANCELLED'}
-        self.report({'INFO'}, "Keymap restored.")
+
+        # Importing only adds the preset. Without this it stays inactive and
+        # nothing appears to change.
+        name = os.path.splitext(os.path.basename(_keymap_backup_path()))[0]
+        keyconfigs = context.window_manager.keyconfigs
+        imported = keyconfigs.get(name)
+        if imported is not None:
+            keyconfigs.active = imported
+            self.report({'INFO'}, "Keymap '%s' is now active." % name)
+        else:
+            self.report({'WARNING'},
+                        "Imported, but could not activate '%s'. "
+                        "Pick it in Preferences > Keymap." % name)
+        return {'FINISHED'}
+
+
+class HP_OT_setup_cleanup(Operator):
+    """Remove duplicate workspaces and shortcuts left by older versions"""
+    bl_idname = "hp.setup_cleanup"
+    bl_label = "Clean Up Duplicates"
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    @staticmethod
+    def _kmi_signature(kmi):
+        return (kmi.idname, kmi.type, kmi.value, kmi.map_type,
+                kmi.ctrl, kmi.shift, kmi.alt, kmi.oskey, kmi.key_modifier)
+
+    def execute(self, context):
+        # Workspaces: "HP Modeling.001" and friends
+        removed_ws = 0
+        for ws in list(bpy.data.workspaces):
+            if not ws.name.startswith(WORKSPACE_PREFIX):
+                continue
+            tail = ws.name.rsplit(".", 1)[-1]
+            if len(tail) == 3 and tail.isdigit():
+                try:
+                    bpy.data.workspaces.remove(ws)
+                    removed_ws += 1
+                except Exception as e:
+                    print("[HEAVYPOLY] could not remove '%s': %r" % (ws.name, e))
+
+        # Keymap items: the old unregister() stacked a fresh copy every reload
+        removed_kmi = 0
+        keyconfigs = context.window_manager.keyconfigs
+        for kc in (keyconfigs.addon, keyconfigs.user):
+            if kc is None:
+                continue
+            for km in kc.keymaps:
+                seen = set()
+                for kmi in list(km.keymap_items):
+                    signature = self._kmi_signature(kmi)
+                    if signature in seen:
+                        try:
+                            km.keymap_items.remove(kmi)
+                            removed_kmi += 1
+                        except Exception:
+                            pass
+                    else:
+                        seen.add(signature)
+
+        self.report({'INFO'}, "Removed %d workspace(s) and %d duplicate shortcut(s)."
+                    % (removed_ws, removed_kmi))
         return {'FINISHED'}
 
 
@@ -394,11 +465,14 @@ class HP_OT_setup_restore(Operator):
                 shutil.copy2(_startup_backup(), _startup_target())
             elif os.path.exists(_startup_target()):
                 os.remove(_startup_target())
-            bpy.ops.wm.read_userpref()
         except Exception as e:
             self.report({'ERROR'}, "Restore failed: %r" % (e,))
             return {'CANCELLED'}
-        self.report({'INFO'}, "Preferences restored.")
+
+        # Calling wm.read_userpref() here used to disable this very add-on
+        # while its classes were still registered, which made re-enabling it
+        # fail with "already registered as a subclass". Restarting is clean.
+        self.report({'WARNING'}, "Restored. Restart Blender to apply.")
         return {'FINISHED'}
 
 
@@ -533,6 +607,7 @@ class HEAVYPOLY_Preferences(AddonPreferences):
         row.operator("hp.setup_load_keymap", icon='FILE_REFRESH')
 
         col.separator()
+        col.operator("hp.setup_cleanup", icon='BRUSH_DATA')
         col.operator("hp.setup_restore", icon='LOOP_BACK')
 
         box.label(text="Save your own File > Defaults > Save Startup File "
@@ -551,6 +626,7 @@ classes = (
     HP_OT_setup_apply_all,
     HP_OT_setup_save_keymap,
     HP_OT_setup_load_keymap,
+    HP_OT_setup_cleanup,
     HP_OT_setup_restore,
     HP_OT_setup_welcome,
     HEAVYPOLY_Preferences,

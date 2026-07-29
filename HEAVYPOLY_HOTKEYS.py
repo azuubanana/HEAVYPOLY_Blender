@@ -257,6 +257,7 @@ def Keymap_Heavypoly():
 
 # Map Curve
     km = kc.keymaps.new('Curve', space_type='EMPTY', region_type='WINDOW', modal=False)
+    kmi = km.keymap_items.new('curve.subdivide', 'R', 'PRESS', ctrl=True)
     Global_Keys()
     kmi = km.keymap_items.new('curve.select_linked', k_select, 'DOUBLE_CLICK', shift=True)
     kmi = km.keymap_items.new('curve.select_linked_pick', k_select, 'DOUBLE_CLICK')
@@ -350,6 +351,34 @@ def Keymap_Heavypoly_TransferMode():
             print("[HEAVYPOLY] transfer_mode not bound in '%s': %r" % (name, e))
 
 
+
+# Modes that expose a mirror / symmetry toggle.
+SYMMETRY_KEYMAPS = (
+    "Mesh",
+    "Sculpt",
+    "Vertex Paint",
+    "Weight Paint",
+    "Image Paint",
+)
+
+
+def Keymap_Heavypoly_Symmetry():
+    """Ctrl+Shift+X / Y / Z toggles symmetry for whichever mode you're in."""
+    kc = bpy.context.window_manager.keyconfigs.addon
+    if kc is None:
+        return
+    for name in SYMMETRY_KEYMAPS:
+        try:
+            km = kc.keymaps.new(name=name)
+        except Exception as e:
+            print("[HEAVYPOLY] symmetry keymap '%s' failed: %r" % (name, e))
+            continue
+        for axis in ('X', 'Y', 'Z'):
+            kmi = km.keymap_items.new('object.hp_toggle_symmetry', axis, 'PRESS',
+                                      ctrl=True, shift=True)
+            kmi_props_setattr(kmi.properties, 'axis', axis)
+
+
 #Function to disable keymap confict
 def disable_default_kmi(km=None, idname=None, retries=1):
     wm = bpy.context.window_manager
@@ -428,10 +457,39 @@ def deactivate_kmi(space: str, **kwargs):
     print("Disabled", kmi.name)
 
 
+# Every keymap item this add-on adds, so unregister() can take them away again.
+addon_keymaps = []
+
+
+def _snapshot(kc):
+    """Remember which keymap items already existed, per keymap."""
+    if kc is None:
+        return {}
+    return {km.name: {kmi.id for kmi in km.keymap_items} for km in kc.keymaps}
+
+
+def _record_new_items(kc, before):
+    """Store whatever appeared since the snapshot."""
+    if kc is None:
+        return
+    for km in kc.keymaps:
+        known = before.get(km.name, set())
+        for kmi in km.keymap_items:
+            if kmi.id not in known:
+                addon_keymaps.append((km, kmi))
+
+
 def register():
+    kc = bpy.context.window_manager.keyconfigs.addon
+    before = _snapshot(kc)
+
     Keymap_Heavypoly()
     Keymap_Heavypoly_GP()
     Keymap_Heavypoly_TransferMode()
+    Keymap_Heavypoly_Symmetry()
+
+    _record_new_items(kc, before)
+    print("[HEAVYPOLY] registered %d keymap items" % len(addon_keymaps))
     disable_default_kmi('Object Mode', 'transform.resize')
     disable_specific_kmi('Object Mode', 'transform.translate','LEFTMOUSE','CLICK_DRAG',False,False,False)
     disable_default_kmi('Object Mode', 'object.delete')
@@ -501,7 +559,14 @@ def register():
 
 
 def unregister():
-    Keymap_Heavypoly()
+    # This used to call Keymap_Heavypoly() again, which registered a second
+    # copy of every shortcut instead of removing the first.
+    for km, kmi in reversed(addon_keymaps):
+        try:
+            km.keymap_items.remove(kmi)
+        except Exception:
+            pass
+    addon_keymaps.clear()
 
 if __name__ == "__main__":
     register()

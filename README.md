@@ -50,7 +50,7 @@ A dialog appears once installation finishes. Press **OK** to set everything up.
 
 Drag this zip onto the Blender window / このzipを Blender のウィンドウにドラッグ:
 
-**https://azuubanana.github.io/HEAVYPOLY_Blender/heavypoly-1.4.0.zip**
+**https://azuubanana.github.io/HEAVYPOLY_Blender/heavypoly-1.5.0.zip**
 
 > ⚠️ **Do not use the green Code > Download ZIP button.** It wraps everything in
 > an extra folder and Blender won't recognise it.

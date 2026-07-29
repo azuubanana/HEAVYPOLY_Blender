@@ -635,7 +635,57 @@ def draw_func(self, context):
     layout.operator("object.select_camera_hidden", icon='RESTRICT_VIEW_ON')
 
 
+# ---------------------------------------------------------------- symmetry
+
+class HP_OT_toggle_symmetry(bpy.types.Operator):
+    """Toggle mirror / symmetry on one axis for the current mode"""
+    bl_idname = "object.hp_toggle_symmetry"
+    bl_label = "Toggle Symmetry"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    axis: bpy.props.EnumProperty(
+        name="Axis",
+        items=[('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", "")],
+        default='X',
+    )
+
+    def execute(self, context):
+        axis = self.axis.lower()
+        tool_settings = context.scene.tool_settings
+        mesh = context.object.data if context.object else None
+
+        # Every mode keeps this flag somewhere different, so walk the
+        # candidates and use the first one that exists.
+        candidates = []
+        mode = context.mode
+
+        if mode == 'SCULPT':
+            candidates.append((tool_settings.sculpt, "use_symmetry_" + axis))
+        elif mode == 'PAINT_VERTEX':
+            candidates.append((tool_settings.vertex_paint, "use_symmetry_" + axis))
+        elif mode == 'PAINT_WEIGHT':
+            candidates.append((tool_settings.weight_paint, "use_symmetry_" + axis))
+        elif mode == 'PAINT_TEXTURE':
+            candidates.append((tool_settings.image_paint, "use_symmetry_" + axis))
+
+        if mesh is not None:
+            candidates.append((mesh, "use_mirror_" + axis))
+            candidates.append((mesh, "use_symmetry_" + axis))
+
+        for owner, attr in candidates:
+            if owner is not None and hasattr(owner, attr):
+                new_value = not getattr(owner, attr)
+                setattr(owner, attr, new_value)
+                self.report({'INFO'}, "Symmetry %s: %s"
+                            % (self.axis, "on" if new_value else "off"))
+                return {'FINISHED'}
+
+        self.report({'WARNING'}, "No symmetry setting for this mode.")
+        return {'CANCELLED'}
+
+
 classes = (
+    HP_OT_toggle_symmetry,
     HP_OT_SaveWithoutPrompt,
     HP_OT_RevertWithoutPrompt,
     HP_OT_DeleteWithoutPrompt,

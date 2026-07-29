@@ -144,7 +144,6 @@ class HP_MT_pie_select(Menu):
                 col.operator('object.mode_set', text = 'Vertex Paint', icon='VPAINT_HLT').mode='VERTEX_PAINT'
                 col.operator('object.mode_set', text = 'Weight Paint', icon='WPAINT_HLT').mode='WEIGHT_PAINT'
                 col.operator('object.mode_set', text = 'Texture Paint', icon='BRUSH_DATA').mode='TEXTURE_PAINT'
-                col.operator('object.sculpt_mode_with_dynotopo', text = 'Sculpt With Dynotopo', icon='SCULPTMODE_HLT')
             case "GPENCIL":
                 col.operator('object.mode_set', text = 'Vertex Paint', icon='VPAINT_HLT').mode='VERTEX_GPENCIL'
                 col.operator('object.mode_set', text = 'Weight Paint', icon='WPAINT_HLT').mode='WEIGHT_GPENCIL'
@@ -442,6 +441,12 @@ class HP_OT_select_border(bpy.types.Operator):
     bl_idname = "mesh.hp_select_border"        # unique identifier for buttons and menu items to reference.
     bl_label = "Select Border"        # display name in the interface.
     bl_options = {'REGISTER', 'UNDO'}  # enable undo for the operator.
+
+    @classmethod
+    def poll(cls, context):
+        # mesh.select_mode has no valid context outside mesh edit mode, so the
+        # button greys out instead of raising.
+        return context.mode == 'EDIT_MESH'
 
     def invoke(self, context, event):
         bpy.ops.mesh.select_mode(type='EDGE')

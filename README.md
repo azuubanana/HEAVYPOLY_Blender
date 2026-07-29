@@ -36,15 +36,17 @@ Do this once and Blender handles updates for you.
 6. **Create**
 7. Search for `HEAVYPOLY`, press **Install** / 検索して **Install**
 
-A dialog appears once installation finishes. Press **OK** to set everything up.
+That's it. The first time it's enabled, HEAVYPOLY sets up the keymap, the
+preferences and the startup file, then opens a new file so you land straight in
+the HP Modeling workspace.
 
-インストールが終わるとダイアログが出ます。**OK** を押すと設定が適用されます。
+以上です。初回有効化時に、キーマップ・設定・スタートアップファイルが自動で適用され、
+新しいファイルが開いて HP Modeling ワークスペースの状態になります。
 
-8. **Open File > New.** Setup replaces the startup file, so a fresh scene is
-   where the HP Modeling workspace and the HEAVYPOLY layout show up.
-
-   **File > New で新しいシーンを開いてください。** スタートアップファイルを差し替える
-   仕組みなので、新しいシーンを開いて初めて HP Modeling ワークスペースが出ます。
+> Install it on a fresh Blender session. If you have unsaved work open you'll be
+> asked to confirm first, since the setup opens a new file.
+>
+> 起動直後の状態でインストールしてください。作業中のファイルがある場合は確認が出ます。
 
 ### Manual download / 手動ダウンロード
 

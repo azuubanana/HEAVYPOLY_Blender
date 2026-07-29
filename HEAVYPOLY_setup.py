@@ -572,49 +572,24 @@ class HP_OT_setup_restore(Operator):
 # ---------------------------------------------------------------- preferences
 
 
-class HP_OT_setup_welcome(Operator):
-    """Shown once after installing or after a feature update"""
-    bl_idname = "hp.setup_welcome"
-    bl_label = "HEAVYPOLY"
+def _first_run_setup():
+    """Set everything up the first time the add-on is enabled.
 
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=380)
-
-    def draw(self, context):
-        layout = self.layout
-        col = layout.column()
-        col.label(text="HEAVYPOLY is installed.", icon='CHECKMARK')
-        col.label(text="Press OK to set up the keymap, workspaces")
-        col.label(text="and startup file.")
-        col.separator()
-        col.label(text="This opens a new file.", icon='INFO')
-
-        modified = _modified_keymap_count()
-        if modified:
-            col.separator()
-            box = col.box()
-            box.label(text="%d shortcut(s) differ from the defaults."
-                           % modified, icon='KEYINGSET')
-            box.operator("hp.setup_save_keymap", icon='FILE_TICK')
-
-    def execute(self, context):
-        return bpy.ops.hp.setup_apply_all('INVOKE_DEFAULT')
-
-
-def _show_welcome():
-    """Called once from a timer, so the UI is ready.
-
-    Only on a fresh install. Updates are announced in the preferences panel
-    instead, so the dialog doesn't jump out at people mid-session.
+    Runs from a timer so Blender has finished booting. Apply All opens a new
+    file at the end, which is the finished state; installing mid-session is
+    guarded by the confirmation inside Apply All itself.
     """
     prefs = _prefs()
     if prefs is None:
         return 0.5   # preferences not registered yet, try again shortly
-    if not prefs.applied_version:
-        try:
-            bpy.ops.hp.setup_welcome('INVOKE_DEFAULT')
-        except Exception as e:
-            print("[HEAVYPOLY] could not open the welcome dialog: %r" % (e,))
+    if prefs.applied_version:
+        return None  # already set up at some point
+
+    print("[HEAVYPOLY] first run - applying setup")
+    try:
+        bpy.ops.hp.setup_apply_all('INVOKE_DEFAULT')
+    except Exception as e:
+        print("[HEAVYPOLY] first run setup failed: %r" % (e,))
     return None
 
 
@@ -707,7 +682,6 @@ classes = (
     HP_OT_setup_load_keymap,
     HP_OT_setup_cleanup,
     HP_OT_setup_restore,
-    HP_OT_setup_welcome,
     HEAVYPOLY_Preferences,
 )
 
@@ -717,10 +691,10 @@ _register_classes, _unregister_classes = bpy.utils.register_classes_factory(clas
 def register():
     _register_classes()
     # Blender is still booting when add-ons register, so defer the dialog.
-    bpy.app.timers.register(_show_welcome, first_interval=1.0)
+    bpy.app.timers.register(_first_run_setup, first_interval=1.0)
 
 
 def unregister():
-    if bpy.app.timers.is_registered(_show_welcome):
-        bpy.app.timers.unregister(_show_welcome)
+    if bpy.app.timers.is_registered(_first_run_setup):
+        bpy.app.timers.unregister(_first_run_setup)
     _unregister_classes()

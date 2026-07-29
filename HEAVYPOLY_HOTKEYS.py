@@ -480,6 +480,12 @@ def _record_new_items(kc, before):
 
 
 def register():
+    # Apply Keymap / Apply All call this again, so clear our previous items
+    # first. Without this every press stacked another copy of every shortcut.
+    if addon_keymaps:
+        print("[HEAVYPOLY] clearing %d previously registered items" % len(addon_keymaps))
+        unregister()
+
     kc = bpy.context.window_manager.keyconfigs.addon
     before = _snapshot(kc)
 

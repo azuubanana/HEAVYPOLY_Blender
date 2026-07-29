@@ -171,6 +171,20 @@ def _bring_to_front(workspaces):
         print("[HEAVYPOLY] could not activate '%s': %r" % (workspaces[0].name, e))
 
 
+def _scene_is_untouched():
+    """True when nothing would be lost by reloading the startup file."""
+    return not bpy.data.filepath and not bpy.data.is_dirty
+
+
+def _open_new_file():
+    """Deferred so the operator that called us has finished first."""
+    try:
+        bpy.ops.wm.read_homefile()
+    except Exception as e:
+        print("[HEAVYPOLY] could not open a new file: %r" % (e,))
+    return None
+
+
 def _apply_preferences(report=None):
     """Turn off the pie unfold animation so menus appear instantly."""
     try:
@@ -315,6 +329,17 @@ class HP_OT_setup_apply_all(Operator):
     bl_idname = "hp.setup_apply_all"
     bl_label = "Apply All"
 
+    def invoke(self, context, event):
+        if _scene_is_untouched():
+            return self.execute(context)
+        return context.window_manager.invoke_props_dialog(self, width=360)
+
+    def draw(self, context):
+        col = self.layout.column()
+        col.label(text="This opens a new file so the setup takes effect.",
+                  icon='ERROR')
+        col.label(text="Unsaved changes will be lost.")
+
     def execute(self, context):
         _make_backup(self.report)
 
@@ -327,18 +352,21 @@ class HP_OT_setup_apply_all(Operator):
         _apply_preferences()
         startup_ok = _install_startup_file(self.report)
 
-        # Also add the workspaces to the file that is open right now, so the
-        # user does not have to restart or press File > New to see anything.
-        appended = _append_workspaces()
-        _bring_to_front(appended)
-
         prefs = _prefs()
         if prefs:
             prefs.applied_startup = startup_ok
             prefs.applied_workspaces = True
             prefs.applied_version = _addon_version()
 
-        self.report({'INFO'}, "HEAVYPOLY is set up. Have fun.")
+        # Loading the startup file is what actually shows the result. Appending
+        # workspaces to the current scene only ever produced a half-applied
+        # look that differed from File > New.
+        if startup_ok:
+            bpy.app.timers.register(_open_new_file, first_interval=0.1)
+            self.report({'INFO'}, "HEAVYPOLY is set up. Have fun.")
+        else:
+            self.report({'WARNING'},
+                        "Set up, but the startup file could not be installed.")
         return {'FINISHED'}
 
 
@@ -400,14 +428,79 @@ class HP_OT_setup_cleanup(Operator):
     bl_label = "Clean Up Duplicates"
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_confirm(self, event)
+        return context.window_manager.invoke_props_dialog(self, width=340)
 
     @staticmethod
     def _kmi_signature(kmi):
+        # The properties matter. Every HEAVYPOLY pie is wm.call_menu_pie on the
+        # same key pattern and only the menu name differs, so ignoring them
+        # made completely different shortcuts look identical.
+        props = []
+        try:
+            for prop in kmi.properties.bl_rna.properties:
+                if prop.identifier == "rna_type":
+                    continue
+                try:
+                    value = getattr(kmi.properties, prop.identifier)
+                except Exception:
+                    continue
+                if hasattr(value, "__iter__") and not isinstance(value, str):
+                    try:
+                        value = tuple(value)
+                    except Exception:
+                        value = repr(value)
+                props.append((prop.identifier, value))
+        except Exception:
+            props.append(("<unreadable>", id(kmi)))
+
         return (kmi.idname, kmi.type, kmi.value, kmi.map_type,
-                kmi.ctrl, kmi.shift, kmi.alt, kmi.oskey, kmi.key_modifier)
+                kmi.ctrl, kmi.shift, kmi.alt, kmi.oskey, kmi.key_modifier,
+                tuple(sorted(props, key=lambda item: item[0])))
+
+    def _count_duplicates(self, context):
+        workspaces = 0
+        for ws in bpy.data.workspaces:
+            if not ws.name.startswith(WORKSPACE_PREFIX):
+                continue
+            tail = ws.name.rsplit(".", 1)[-1]
+            if len(tail) == 3 and tail.isdigit():
+                workspaces += 1
+
+        items = 0
+        keyconfigs = context.window_manager.keyconfigs
+        for kc in (keyconfigs.addon, keyconfigs.user):
+            if kc is None:
+                continue
+            for km in kc.keymaps:
+                seen = set()
+                for kmi in km.keymap_items:
+                    signature = self._kmi_signature(kmi)
+                    if signature in seen:
+                        items += 1
+                    else:
+                        seen.add(signature)
+        return workspaces, items
+
+    def draw(self, context):
+        layout = self.layout
+        workspaces, items = self._count_duplicates(context)
+        col = layout.column()
+        col.label(text="Remove %d duplicate workspace(s)" % workspaces)
+        col.label(text="and %d duplicate shortcut(s)?" % items)
+        col.separator()
+        col.label(text="Your keymap is saved first, so Load My Keymap",
+                  icon='INFO')
+        col.label(text="can bring it back.")
 
     def execute(self, context):
+        # Always take a keymap snapshot before deleting anything.
+        try:
+            bpy.ops.preferences.keyconfig_export(filepath=_keymap_backup_path(),
+                                                 all=False)
+            print("[HEAVYPOLY] keymap backed up before cleanup")
+        except Exception as e:
+            print("[HEAVYPOLY] pre-cleanup backup failed: %r" % (e,))
+
         # Workspaces: "HP Modeling.001" and friends
         removed_ws = 0
         for ws in list(bpy.data.workspaces):
@@ -489,21 +582,12 @@ class HP_OT_setup_welcome(Operator):
 
     def draw(self, context):
         layout = self.layout
-        prefs = _prefs()
-        first_time = not (prefs and prefs.applied_version)
-
         col = layout.column()
-        if first_time:
-            col.label(text="HEAVYPOLY is installed.", icon='CHECKMARK')
-            col.label(text="Press OK to set up the keymap, workspaces")
-            col.label(text="and startup file.")
-        else:
-            col.label(text="HEAVYPOLY was updated to %s." % _addon_version(),
-                      icon='FILE_REFRESH')
-            col.label(text="Press OK to apply the new startup file.")
-
+        col.label(text="HEAVYPOLY is installed.", icon='CHECKMARK')
+        col.label(text="Press OK to set up the keymap, workspaces")
+        col.label(text="and startup file.")
         col.separator()
-        col.label(text="Then open File > New to start fresh.", icon='INFO')
+        col.label(text="This opens a new file.", icon='INFO')
 
         modified = _modified_keymap_count()
         if modified:
@@ -514,24 +598,19 @@ class HP_OT_setup_welcome(Operator):
             box.operator("hp.setup_save_keymap", icon='FILE_TICK')
 
     def execute(self, context):
-        return bpy.ops.hp.setup_apply_all()
-
-
-def _feature_change(old, new):
-    """True when major or minor moved. Patch releases stay quiet."""
-    if not new:
-        return False
-    if not old:
-        return True
-    return old.split(".")[:2] != new.split(".")[:2]
+        return bpy.ops.hp.setup_apply_all('INVOKE_DEFAULT')
 
 
 def _show_welcome():
-    """Called once from a timer, so the UI is ready."""
+    """Called once from a timer, so the UI is ready.
+
+    Only on a fresh install. Updates are announced in the preferences panel
+    instead, so the dialog doesn't jump out at people mid-session.
+    """
     prefs = _prefs()
     if prefs is None:
         return 0.5   # preferences not registered yet, try again shortly
-    if _feature_change(prefs.applied_version, _addon_version()):
+    if not prefs.applied_version:
         try:
             bpy.ops.hp.setup_welcome('INVOKE_DEFAULT')
         except Exception as e:

@@ -1,0 +1,22 @@
+schema_version = "1.0.0"
+
+id = "heavypoly"
+version = "1.2.1"
+name = "HEAVYPOLY"
+tagline = "Pie menus and hotkeys for fast modelling"
+maintainer = "Vaughan Ling, Julien Gauthier, Azusa Tojo"
+type = "add-on"
+
+website = "https://github.com/azuubanana/HEAVYPOLY_Blender"
+
+tags = ["Modeling", "User Interface"]
+
+blender_version_min = "5.2.0"
+
+license = [
+  "SPDX:MIT",
+]
+
+copyright = [
+  "2022 Vaughan Ling",
+]

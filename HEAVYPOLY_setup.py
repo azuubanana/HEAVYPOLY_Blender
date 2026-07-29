@@ -20,6 +20,7 @@ WORKSPACE_PREFIX = "HP "
 STARTUP_FILE = "HP_Startup.blend"
 BACKUP_NAME = "HP_userpref_backup.blend"
 KEYMAP_BACKUP_NAME = "HP_keymap_backup.py"
+KEYMAP_AUTOSAVE_NAME = "HP_keymap_autosave.py"
 STARTUP_BACKUP_NAME = "HP_startup_backup.blend"
 
 # Pie menus should appear instantly, not unfold.
@@ -55,6 +56,22 @@ def _backup_path():
 
 def _keymap_backup_path():
     return os.path.join(_config_dir(), KEYMAP_BACKUP_NAME)
+
+
+def _keymap_autosave_path():
+    """Separate from the manual backup, so a rescue never overwrites it."""
+    return os.path.join(_config_dir(), KEYMAP_AUTOSAVE_NAME)
+
+
+def _autosave_keymap():
+    try:
+        bpy.ops.preferences.keyconfig_export(filepath=_keymap_autosave_path(),
+                                             all=False)
+        print("[HEAVYPOLY] keymap auto-saved to %s" % _keymap_autosave_path())
+        return True
+    except Exception as e:
+        print("[HEAVYPOLY] keymap auto-save failed: %r" % (e,))
+        return False
 
 
 def _addon_version():
@@ -327,7 +344,7 @@ class HP_OT_setup_replace_workspaces(Operator):
 class HP_OT_setup_apply_all(Operator):
     """Apply everything: keymap, preferences, startup file and workspaces"""
     bl_idname = "hp.setup_apply_all"
-    bl_label = "Apply All"
+    bl_label = "Set Up HEAVYPOLY"
 
     def invoke(self, context, event):
         if _scene_is_untouched():
@@ -488,18 +505,12 @@ class HP_OT_setup_cleanup(Operator):
         col.label(text="Remove %d duplicate workspace(s)" % workspaces)
         col.label(text="and %d duplicate shortcut(s)?" % items)
         col.separator()
-        col.label(text="Your keymap is saved first, so Load My Keymap",
-                  icon='INFO')
-        col.label(text="can bring it back.")
+        col.label(text="Your keymap is auto-saved first.", icon='INFO')
+        col.label(text="Undo with Load Auto-Saved Keymap.")
 
     def execute(self, context):
         # Always take a keymap snapshot before deleting anything.
-        try:
-            bpy.ops.preferences.keyconfig_export(filepath=_keymap_backup_path(),
-                                                 all=False)
-            print("[HEAVYPOLY] keymap backed up before cleanup")
-        except Exception as e:
-            print("[HEAVYPOLY] pre-cleanup backup failed: %r" % (e,))
+        _autosave_keymap()
 
         # Workspaces: "HP Modeling.001" and friends
         removed_ws = 0
@@ -535,6 +546,73 @@ class HP_OT_setup_cleanup(Operator):
 
         self.report({'INFO'}, "Removed %d workspace(s) and %d duplicate shortcut(s)."
                     % (removed_ws, removed_kmi))
+        return {'FINISHED'}
+
+
+class HP_OT_setup_reset_keymap(Operator):
+    """Throw away keymap edits and rebuild the HEAVYPOLY defaults"""
+    bl_idname = "hp.setup_reset_keymap"
+    bl_label = "Reset Keymap to HP Default"
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=360)
+
+    def draw(self, context):
+        col = self.layout.column()
+        col.label(text="Any shortcuts you changed yourself will be lost.",
+                  icon='ERROR')
+        col.separator()
+        col.label(text="Your keymap is auto-saved first.", icon='INFO')
+        col.label(text="Undo with Load Auto-Saved Keymap.")
+
+    def execute(self, context):
+        _autosave_keymap()
+
+        keyconfigs = context.window_manager.keyconfigs
+        stock = keyconfigs.get("Blender")
+        if stock is not None:
+            try:
+                keyconfigs.active = stock
+            except Exception as e:
+                print("[HEAVYPOLY] could not activate the stock keyconfig: %r" % (e,))
+
+        try:
+            from . import HEAVYPOLY_HOTKEYS
+            HEAVYPOLY_HOTKEYS.unregister()
+            HEAVYPOLY_HOTKEYS.register()
+        except Exception as e:
+            self.report({'ERROR'}, "Could not rebuild the keymap: %r" % (e,))
+            return {'CANCELLED'}
+
+        self.report({'INFO'}, "Keymap reset to the HEAVYPOLY defaults.")
+        return {'FINISHED'}
+
+
+class HP_OT_setup_load_autosave(Operator):
+    """Load the keymap saved automatically before the last repair"""
+    bl_idname = "hp.setup_load_autosave"
+    bl_label = "Load Auto-Saved Keymap"
+
+    @classmethod
+    def poll(cls, context):
+        return os.path.exists(_keymap_autosave_path())
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        path = _keymap_autosave_path()
+        try:
+            bpy.ops.preferences.keyconfig_import(filepath=path, keep_original=True)
+        except Exception as e:
+            self.report({'ERROR'}, "Could not load the keymap: %r" % (e,))
+            return {'CANCELLED'}
+
+        name = os.path.splitext(os.path.basename(path))[0]
+        imported = context.window_manager.keyconfigs.get(name)
+        if imported is not None:
+            context.window_manager.keyconfigs.active = imported
+        self.report({'INFO'}, "Auto-saved keymap restored.")
         return {'FINISHED'}
 
 
@@ -600,6 +678,10 @@ class HEAVYPOLY_Preferences(AddonPreferences):
         name="Manual Setup",
         default=False,
     )
+    show_trouble: BoolProperty(
+        name="Troubleshooting",
+        default=False,
+    )
     applied_startup: BoolProperty(default=False)
     applied_workspaces: BoolProperty(default=False)
     applied_version: StringProperty(default="")
@@ -639,36 +721,45 @@ class HEAVYPOLY_Preferences(AddonPreferences):
 
         layout.separator()
 
+        # --- individual setup steps ---
         header = layout.row()
         header.prop(self, "show_manual",
                     icon='TRIA_DOWN' if self.show_manual else 'TRIA_RIGHT',
                     emboss=False)
+        if self.show_manual:
+            box = layout.box()
+            col = box.column(align=True)
+            col.operator("hp.setup_apply_keymap", icon='KEYINGSET')
+            col.operator("hp.setup_apply_preferences", icon='PREFERENCES')
+            col.operator("hp.setup_install_startup", icon='FILE_BLEND')
+            col.operator("hp.setup_load_workspaces", icon='WORKSPACE')
+            col.operator("hp.setup_replace_workspaces", icon='WORKSPACE')
+            box.label(text="Save your own File > Defaults > Save Startup File "
+                           "afterwards to override it.", icon='INFO')
 
-        if not self.show_manual:
-            return
+        # --- rescue tools, kept apart from the setup steps ---
+        header = layout.row()
+        header.prop(self, "show_trouble",
+                    icon='TRIA_DOWN' if self.show_trouble else 'TRIA_RIGHT',
+                    emboss=False)
+        if self.show_trouble:
+            box = layout.box()
+            col = box.column(align=True)
+            row = col.row(align=True)
+            row.operator("hp.setup_save_keymap", icon='FILE_TICK')
+            row.operator("hp.setup_load_keymap", icon='FILE_REFRESH')
 
-        box = layout.box()
-        col = box.column(align=True)
-        col.operator("hp.setup_apply_keymap", icon='KEYINGSET')
-        col.operator("hp.setup_apply_preferences", icon='PREFERENCES')
-        col.operator("hp.setup_install_startup", icon='FILE_BLEND')
-        col.operator("hp.setup_load_workspaces", icon='WORKSPACE')
-        col.operator("hp.setup_replace_workspaces", icon='WORKSPACE')
+            col.separator()
+            col.operator("hp.setup_reset_keymap", icon='LOOP_BACK')
+            col.operator("hp.setup_cleanup", icon='BRUSH_DATA')
+            col.operator("hp.setup_load_autosave", icon='RECOVER_LAST')
 
-        col.separator()
-        row = col.row(align=True)
-        row.operator("hp.setup_save_keymap", icon='FILE_TICK')
-        row.operator("hp.setup_load_keymap", icon='FILE_REFRESH')
+            col.separator()
+            col.operator("hp.setup_restore", icon='TRASH')
 
-        col.separator()
-        col.operator("hp.setup_cleanup", icon='BRUSH_DATA')
-        col.operator("hp.setup_restore", icon='LOOP_BACK')
-
-        box.label(text="Save your own File > Defaults > Save Startup File "
-                       "afterwards to override it.", icon='INFO')
-        if not os.path.exists(_backup_path()):
-            box.label(text="No backup yet. One is made the first time you apply.",
-                      icon='INFO')
+            if not os.path.exists(_backup_path()):
+                box.label(text="No backup yet. One is made the first time "
+                               "you set up.", icon='INFO')
 
 
 classes = (
@@ -681,6 +772,8 @@ classes = (
     HP_OT_setup_save_keymap,
     HP_OT_setup_load_keymap,
     HP_OT_setup_cleanup,
+    HP_OT_setup_reset_keymap,
+    HP_OT_setup_load_autosave,
     HP_OT_setup_restore,
     HEAVYPOLY_Preferences,
 )

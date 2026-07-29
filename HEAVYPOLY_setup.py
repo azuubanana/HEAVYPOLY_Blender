@@ -8,16 +8,18 @@ normal way when the add-on is enabled.
 """
 
 import os
+import re
 import shutil
 
 import bpy
 from bpy.types import Operator, AddonPreferences
-from bpy.props import BoolProperty
+from bpy.props import BoolProperty, StringProperty
 
 
 WORKSPACE_PREFIX = "HP "
 STARTUP_FILE = "HP_Startup.blend"
 BACKUP_NAME = "HP_userpref_backup.blend"
+KEYMAP_BACKUP_NAME = "HP_keymap_backup.py"
 STARTUP_BACKUP_NAME = "HP_startup_backup.blend"
 
 # Pie menus should appear instantly, not unfold.
@@ -49,6 +51,34 @@ def _config_dir():
 
 def _backup_path():
     return os.path.join(_config_dir(), BACKUP_NAME)
+
+
+def _keymap_backup_path():
+    return os.path.join(_config_dir(), KEYMAP_BACKUP_NAME)
+
+
+def _addon_version():
+    """Read the version straight out of blender_manifest.toml."""
+    path = os.path.join(_package_dir(), "blender_manifest.toml")
+    try:
+        text = open(path, encoding="utf-8").read()
+    except Exception:
+        return ""
+    match = re.search(r'^version\s*=\s*"([^"]*)"', text, re.MULTILINE)
+    return match.group(1) if match else ""
+
+
+def _modified_keymap_count():
+    """How many shortcuts the user has changed by hand."""
+    kc = bpy.context.window_manager.keyconfigs.user
+    if kc is None:
+        return 0
+    count = 0
+    for km in kc.keymaps:
+        for kmi in km.keymap_items:
+            if getattr(kmi, "is_user_modified", False):
+                count += 1
+    return count
 
 
 def _prefs():
@@ -298,8 +328,49 @@ class HP_OT_setup_apply_all(Operator):
         if prefs:
             prefs.applied_startup = startup_ok
             prefs.applied_workspaces = True
+            prefs.applied_version = _addon_version()
 
         self.report({'INFO'}, "HEAVYPOLY is set up. Have fun.")
+        return {'FINISHED'}
+
+
+class HP_OT_setup_save_keymap(Operator):
+    """Write your current shortcuts to a file you can reload later"""
+    bl_idname = "hp.setup_save_keymap"
+    bl_label = "Save My Keymap"
+
+    def execute(self, context):
+        path = _keymap_backup_path()
+        try:
+            bpy.ops.preferences.keyconfig_export(filepath=path, all=False)
+        except Exception as e:
+            self.report({'ERROR'}, "Could not save the keymap: %r" % (e,))
+            return {'CANCELLED'}
+        self.report({'INFO'}, "Saved to %s" % path)
+        print("[HEAVYPOLY] keymap saved to %s" % path)
+        return {'FINISHED'}
+
+
+class HP_OT_setup_load_keymap(Operator):
+    """Load the shortcuts you saved earlier"""
+    bl_idname = "hp.setup_load_keymap"
+    bl_label = "Load My Keymap"
+
+    @classmethod
+    def poll(cls, context):
+        return os.path.exists(_keymap_backup_path())
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        try:
+            bpy.ops.preferences.keyconfig_import(filepath=_keymap_backup_path(),
+                                                 keep_original=True)
+        except Exception as e:
+            self.report({'ERROR'}, "Could not load the keymap: %r" % (e,))
+            return {'CANCELLED'}
+        self.report({'INFO'}, "Keymap restored.")
         return {'FINISHED'}
 
 
@@ -331,20 +402,67 @@ class HP_OT_setup_restore(Operator):
         return {'FINISHED'}
 
 
-class HP_OT_setup_factory(Operator):
-    """Reset Blender to its factory settings"""
-    bl_idname = "hp.setup_factory"
-    bl_label = "Load Factory Settings"
+# ---------------------------------------------------------------- preferences
+
+
+class HP_OT_setup_welcome(Operator):
+    """Shown once after installing or after a feature update"""
+    bl_idname = "hp.setup_welcome"
+    bl_label = "HEAVYPOLY"
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_confirm(self, event)
+        return context.window_manager.invoke_props_dialog(self, width=380)
+
+    def draw(self, context):
+        layout = self.layout
+        prefs = _prefs()
+        first_time = not (prefs and prefs.applied_version)
+
+        col = layout.column()
+        if first_time:
+            col.label(text="HEAVYPOLY is installed.", icon='CHECKMARK')
+            col.label(text="Press OK to set up the keymap, workspaces")
+            col.label(text="and startup file.")
+        else:
+            col.label(text="HEAVYPOLY was updated to %s." % _addon_version(),
+                      icon='FILE_REFRESH')
+            col.label(text="Press OK to apply the new startup file.")
+
+        col.separator()
+        col.label(text="Then open File > New to start fresh.", icon='INFO')
+
+        modified = _modified_keymap_count()
+        if modified:
+            col.separator()
+            box = col.box()
+            box.label(text="%d shortcut(s) differ from the defaults."
+                           % modified, icon='KEYINGSET')
+            box.operator("hp.setup_save_keymap", icon='FILE_TICK')
 
     def execute(self, context):
-        bpy.ops.wm.read_factory_settings()
-        return {'FINISHED'}
+        return bpy.ops.hp.setup_apply_all()
 
 
-# ---------------------------------------------------------------- preferences
+def _feature_change(old, new):
+    """True when major or minor moved. Patch releases stay quiet."""
+    if not new:
+        return False
+    if not old:
+        return True
+    return old.split(".")[:2] != new.split(".")[:2]
+
+
+def _show_welcome():
+    """Called once from a timer, so the UI is ready."""
+    prefs = _prefs()
+    if prefs is None:
+        return 0.5   # preferences not registered yet, try again shortly
+    if _feature_change(prefs.applied_version, _addon_version()):
+        try:
+            bpy.ops.hp.setup_welcome('INVOKE_DEFAULT')
+        except Exception as e:
+            print("[HEAVYPOLY] could not open the welcome dialog: %r" % (e,))
+    return None
 
 
 class HEAVYPOLY_Preferences(AddonPreferences):
@@ -356,17 +474,36 @@ class HEAVYPOLY_Preferences(AddonPreferences):
     )
     applied_startup: BoolProperty(default=False)
     applied_workspaces: BoolProperty(default=False)
+    applied_version: StringProperty(default="")
 
     def draw(self, context):
         layout = self.layout
 
+        current = _addon_version()
+        applied = self.applied_startup and self.applied_workspaces
+
         box = layout.box()
-        row = box.row()
-        if self.applied_startup and self.applied_workspaces:
-            row.label(text="Applied", icon='CHECKMARK')
-        else:
+        if not applied:
+            row = box.row()
             row.alert = True
             row.label(text="Not applied yet - click Apply All to start", icon='ERROR')
+        elif current and self.applied_version != current:
+            # The add-on was updated. The startup file and the keymap only
+            # change when Apply All runs, so say so rather than doing it.
+            col = box.column(align=True)
+            row = col.row()
+            row.alert = True
+            row.label(text="Updated to %s" % current, icon='ERROR')
+            col.label(text="Apply All to get the new startup file.")
+            col.label(text="Save your keymap first if you changed any shortcuts.")
+            col.operator("hp.setup_save_keymap", icon='FILE_TICK')
+        else:
+            box.label(text="Applied  (%s)" % (current or "?"), icon='CHECKMARK')
+
+        modified = _modified_keymap_count()
+        if modified:
+            box.label(text="%d shortcut(s) changed from the defaults." % modified,
+                      icon='KEYINGSET')
 
         col = layout.column()
         col.scale_y = 2.0
@@ -391,8 +528,12 @@ class HEAVYPOLY_Preferences(AddonPreferences):
         col.operator("hp.setup_replace_workspaces", icon='WORKSPACE')
 
         col.separator()
+        row = col.row(align=True)
+        row.operator("hp.setup_save_keymap", icon='FILE_TICK')
+        row.operator("hp.setup_load_keymap", icon='FILE_REFRESH')
+
+        col.separator()
         col.operator("hp.setup_restore", icon='LOOP_BACK')
-        col.operator("hp.setup_factory", icon='TRASH')
 
         box.label(text="Save your own File > Defaults > Save Startup File "
                        "afterwards to override it.", icon='INFO')
@@ -408,9 +549,23 @@ classes = (
     HP_OT_setup_load_workspaces,
     HP_OT_setup_replace_workspaces,
     HP_OT_setup_apply_all,
+    HP_OT_setup_save_keymap,
+    HP_OT_setup_load_keymap,
     HP_OT_setup_restore,
-    HP_OT_setup_factory,
+    HP_OT_setup_welcome,
     HEAVYPOLY_Preferences,
 )
 
-register, unregister = bpy.utils.register_classes_factory(classes)
+_register_classes, _unregister_classes = bpy.utils.register_classes_factory(classes)
+
+
+def register():
+    _register_classes()
+    # Blender is still booting when add-ons register, so defer the dialog.
+    bpy.app.timers.register(_show_welcome, first_interval=1.0)
+
+
+def unregister():
+    if bpy.app.timers.is_registered(_show_welcome):
+        bpy.app.timers.unregister(_show_welcome)
+    _unregister_classes()

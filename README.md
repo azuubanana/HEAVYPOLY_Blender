@@ -1,165 +1,212 @@
+# HEAVYPOLY for Blender 5.2
 
-# HEAVYPOLY for Blender
+Custom pie menus and hotkeys that make Blender faster to work in — built for pen
+tablets and mice alike, and fine for both left- and right-handed artists.
 
-Custom scripts and pie menus to make Blender faster and easier to use — designed for pen tablet or mouse. Works well for both left- and right-handed artists.
+This is a fork of [HEAVYPOLY](https://github.com/HEAVYPOLY/HEAVYPOLY_Blender) by
+Vaughan Ling, updated for Blender 5.2 and repackaged as an extension.
+MIT licensed — see [LICENSE.md](LICENSE.md).
+
+Blender 5.2 用の HEAVYPOLY です。パイメニューとショートカットで Blender の作業を
+速くします。ペンタブでもマウスでも、左利き・右利きどちらでも使えます。
+
+Vaughan Ling 氏の HEAVYPOLY を 5.2 対応にし、拡張機能として再パッケージした
+フォークです。MIT ライセンスです。
 
 ---
 
-## 🔧 Blender 5.2 Update (fork)
+## Installation / インストール
 
-This copy targets **Blender 5.2 LTS only**. Legacy 2.79 / 4.x code paths have been removed.
-Original work © 2022 Vaughan Ling, MIT licensed — see `LICENSE.md`.
+### Recommended: add the repository / おすすめ：リポジトリ登録
+
+Do this once and Blender handles updates for you.
+
+一度登録すれば、以降は Blender が更新を扱ってくれます。
+
+1. **Edit > Preferences > Get Extensions**
+2. Click **Repositories** (top right dropdown) / 右上の **Repositories** をクリック
+3. **＋ > Add Remote Repository**
+4. Paste this URL / このURLを貼り付け:
+
+   ```
+   https://azuubanana.github.io/HEAVYPOLY_Blender/index.json
+   ```
+
+5. Tick **Check for Updates on Startup** / チェックを入れる
+6. **Create**
+7. Search for `HEAVYPOLY`, press **Install** / 検索して **Install**
+
+A dialog appears once installation finishes. Press **OK** to set everything up.
+
+インストールが終わるとダイアログが出ます。**OK** を押すと設定が適用されます。
+
+8. **Open File > New.** Setup replaces the startup file, so a fresh scene is
+   where the HP Modeling workspace and the HEAVYPOLY layout show up.
+
+   **File > New で新しいシーンを開いてください。** スタートアップファイルを差し替える
+   仕組みなので、新しいシーンを開いて初めて HP Modeling ワークスペースが出ます。
+
+### Manual download / 手動ダウンロード
+
+Drag this zip onto the Blender window / このzipを Blender のウィンドウにドラッグ:
+
+**https://azuubanana.github.io/HEAVYPOLY_Blender/heavypoly-1.4.0.zip**
+
+> ⚠️ **Do not use the green Code > Download ZIP button.** It wraps everything in
+> an extra folder and Blender won't recognise it.
+>
+> ⚠️ **緑の Code > Download ZIP は使わないでください。** 余計なフォルダが付くため、
+> Blender が拡張機能として認識できません。
+
+> ⚠️ **macOS / Safari:** with "Open safe files after downloading" on, Safari
+> unzips the file and there's nothing left to drag. Turn it off, or use Chrome.
+>
+> ⚠️ **macOS / Safari:** 「ダウンロード後、"安全な"ファイルを開く」がオンだと zip が
+> 自動解凍されます。設定をオフにするか、Chrome を使ってください。
+
+---
+
+## Updating / 更新
+
+**Edit > Preferences > Get Extensions > Check for Updates**
+
+If a new version exists an **Update** button appears. After a feature update a
+dialog asks you to apply the new settings.
+
+新しいバージョンがあれば **Update** ボタンが出ます。機能追加を含む更新のあとは、
+設定を適用するかどうかのダイアログが出ます。
+
+Bug-fix releases (1.3.0 → 1.3.1) install quietly and need no action.
+
+バグ修正だけの更新（1.3.0 → 1.3.1）は静かに入り、操作は不要です。
+
+---
+
+## The setup panel / セットアップパネル
+
+**Edit > Preferences > Add-ons > HEAVYPOLY**
+
+**Apply All** does everything. Individual steps live under **Manual Setup**.
+
+**Apply All** ですべて設定されます。個別の操作は **Manual Setup** の中です。
+
+| Button | What it does / 内容 |
+|---|---|
+| Apply Keymap | Re-registers the shortcuts / ショートカットを再登録 |
+| Apply Preferences | Turns off the pie animation / パイのアニメーションをオフに |
+| Install Startup File | Makes File > New open the HP layout / File > New を HP の状態に |
+| Load Workspaces | Adds the HP workspaces, keeps yours / HP のワークスペースを追加 |
+| Replace Workspaces | Adds them and removes the rest / 追加して他を削除 |
+| Save My Keymap | Writes your shortcuts to a file / 現在のショートカットを保存 |
+| Load My Keymap | Reads them back / 保存したものを読み込み |
+| Restore My Settings | Rolls back to before you first applied / 適用前に戻す |
+
+Your preferences and startup file are backed up automatically the first time you
+press Apply, so **Restore My Settings** can always take you back.
+
+初回の Apply 時に設定とスタートアップファイルが自動バックアップされるので、
+**Restore My Settings** でいつでも戻せます。
+
+If you customise shortcuts, press **Save My Keymap** so an update can't lose them.
+
+ショートカットを変えたら **Save My Keymap** を押しておいてください。更新で消える
+心配がなくなります。
+
+You can set your own default scene afterwards with **File > Defaults > Save
+Startup File** — that overwrites ours, which is fine.
+
+**File > Defaults > Save Startup File** で自分好みのスタートアップに上書きすることも
+できます。
+
+---
+
+## When something doesn't work / うまくいかないとき
+
+`HP_Check.py` ships inside the add-on and reports what is and isn't working. It
+only reads — it changes nothing.
+
+アドオンに `HP_Check.py` が同梱されています。何が動いていないかを診断します。
+**環境を書き換えることはありません。**
+
+1. Switch an area to the **Text Editor** / エリアを **Text Editor** に切り替える
+2. **Open** → `HP_Check.py`
+3. **Run Script** (Alt+P)
+4. Pick `HP_Check_Result` from the dropdown at the top
+   上部のドロップダウンから `HP_Check_Result` を選ぶ
+5. Ctrl+A, Ctrl+C, and send it over / コピーして講師に送ってください
+
+> ⚠️ Don't press Run Script while the report is open. It's a report, not a
+> script, so Python will complain.
+>
+> ⚠️ レポートを開いた状態で Run Script を押さないでください。エラーになります。
+
+Set `LANG = "EN"` at the top of the file for an English report.
+冒頭の `LANG` を `"EN"` にすると英語で出力されます。
+
+---
+
+## What changed for 5.2 / 5.2 対応の変更点
 
 ### Fixed
 
-- **Removed `import bgl`** (`draw_primitives`, `select_through_border`). The BGL module was
-  deleted in Blender 5.0, so both files failed to import and every operator inside them
-  vanished. This also restores the Specials pie layout — the missing *Draw Primitives*
-  entry was shifting all later slots by one position.
+- **Removed `import bgl`** (`draw_primitives`, `select_through_border`). BGL was
+  deleted in Blender 5.0, so both files failed to import and every operator in
+  them vanished. That also scrambled the Specials pie — the missing *Draw
+  Primitives* entry shifted every later slot by one position.
 - **`blf.size()`** no longer takes a DPI argument (changed in 4.0).
-- **Auto Smooth** now uses `bpy.ops.object.shade_auto_smooth()` instead of hard-coding the
-  Essentials asset path and the node group's socket identifiers.
+- **Auto Smooth** calls `bpy.ops.object.shade_auto_smooth()` instead of
+  hard-coding the Essentials asset path and the node group's socket identifiers.
 - **`Mesh.use_auto_smooth` / `auto_smooth_angle`** removed (gone since 4.1).
-- **Keymap registration hardened.** Missing keymaps used to raise and abort `register()`
-  part-way, leaving Blender's conflicting default shortcuts active. Lookups now warn and
-  continue.
-- **`unified_paint_settings`** moved to the mode-specific `Paint` struct in 5.0.
-- **`paint.brush_select`**: `sculpt_tool` renamed to `sculpt_brush_type`.
+- **Keymap registration hardened.** A missing keymap used to raise and abort
+  `register()` part-way, leaving Blender's conflicting defaults active.
+- **`unregister()` actually unregisters.** It used to call the registration
+  function again, stacking a second copy of every shortcut on each reload.
+- **`unified_paint_settings`** moved onto the mode-specific `Paint` struct in 5.0.
+- **`paint.brush_select`**: `sculpt_tool` → `sculpt_brush_type`.
+- **OBJ and STL** importers/exporters are now `wm.obj_import`, `wm.stl_import`
+  and friends.
+- **`object.gpencil_modifier_add`** merged into `object.modifier_add` in 4.3.
 - **Camera DOF panel** in `_menu_master` was still on the 2.79 `gpu_dof` API.
 - **GP Canvas** (Front / Top / Side) assigned to a local variable and did nothing.
+- **`mesh.smart_bevel`** → `view3d.smart_bevel` (a long-standing typo).
 - *Keys Viewer* commented out — it needs the external Screencast Keys add-on.
 
 ### Added
 
-- **Draw with GP** — Ctrl+Space → bottom-right column. Creates a new Grease Pencil object
-  and drops straight into draw mode.
+- **Draw with GP** — Ctrl+Space, bottom-right column. Creates a Grease Pencil
+  object and drops straight into draw mode.
   - Nothing selected → placed at the 3D cursor, stroke placement **Origin**
-  - Object selected → placed at that object and **parented** to it, stroke placement
-    **Surface** with a 0.015 m offset (stops strokes sinking into the mesh)
-  - Drawing plane is locked to **View** in both cases
-  - Materials `Pencil`, `Halftone` and `Fill` are attached (reused if already present) and
-    the brush is switched to vertex colour
-
-### Note
-
-`config/startup.blend` and `config/userpref.blend` are still the 4.5 / 4.3 files.
-Open them in 5.2 and re-save if you want them fully converted.
-
----
-
-## 💾 Installation (Blender 5.2)
-
-**Drag `HEAVYPOLY_5.2.zip` onto the Blender window.** That's it.
-
-Blender will ask you to confirm, then install it as an extension.
-
-Then open **Edit > Preferences > Add-ons > HEAVYPOLY** and press **Apply All**.
-That installs the HEAVYPOLY startup file (so **File > New** opens in the
-HEAVYPOLY layout, with the HP Modeling workspace), turns off the pie menu
-unfold animation, and adds the workspaces to whatever file you have open right
-now. The keymap is already active as soon as the add-on is enabled.
-
-Your previous `startup.blend` is backed up first. If you later want your own
-default scene, just set it up and use **File > Defaults > Save Startup File** —
-that overwrites ours, which is fine.
-
-If you'd rather do it piece by piece, expand **Manual Setup** in the same panel.
-It also holds **Restore My Settings**, which puts back both the preferences and
-the startup file you had before you first pressed Apply.
-
-> ⚠️ **macOS / Safari:** if "Open safe files after downloading" is enabled,
-> Safari unzips the file automatically and there is nothing left to drag.
-> Turn that setting off, or use Chrome or Firefox.
-
-### Uninstalling
-
-Preferences > Add-ons > HEAVYPOLY > the dropdown > Uninstall. Your own settings
-are untouched; use **Restore My Settings** first if you want the theme and
-workspaces reverted too.
-
-### Diagnostics
-
-`HP_Check.py` ships inside the add-on folder. Open it in the Text Editor and
-press Run Script to get a report on what is and isn't working in your Blender.
-It only reads; it changes nothing.
+  - Object selected → placed at that object and **parented** to it, stroke
+    placement **Surface** with a 0.015 m offset so strokes don't sink in
+  - Drawing plane locked to **View**, depth order set to **3D**
+  - Materials `Pencil`, `Halftone`, `Fill` attached, brush set to vertex colour
+- **Double click selects a whole stroke** in Grease Pencil edit mode, the way it
+  works on meshes. Shift+double click adds to the selection.
+- **Alt+Left Click = Transfer Mode** — hop to whatever object is under the cursor
+  without leaving sculpt or paint mode.
+- **Setup panel** with backup and restore.
+- **`HP_Check.py`** diagnostics.
 
 ---
 
-## 📦 Older manual installation (Blender 4.x)
+## Other Blender versions / 他のバージョン
 
-### Download Instructions
-
-#### Blender Versions
-
-- **Blender 5.2** — this fork
-  Grab the zip from [Releases](https://github.com/azuubanana/HEAVYPOLY_Blender/releases)
-  and drag it onto Blender. See **Installation** above; the folder-copying steps
-  below do **not** apply.
-
-- **Blender 4.3 and 4.5**
-  [Renart84's config](https://github.com/Renart84/HEAVYPOLY_Blender)
-
-- **Blender 4.1 and 4.2**
-  [Download v1.0.0](https://github.com/Renart84/HEAVYPOLY_Blender/releases/tag/v1.0.0)
-
-- **Blender 3.6 and 4.0**
-  [Download older release](https://github.com/HEAVYPOLY/HEAVYPOLY_Blender/releases)
+- **Blender 4.3 and 4.5** — [Renart84's config](https://github.com/Renart84/HEAVYPOLY_Blender)
+- **Blender 4.1 and 4.2** — [v1.0.0](https://github.com/Renart84/HEAVYPOLY_Blender/releases/tag/v1.0.0)
+- **Blender 3.6 and 4.0** — [older releases](https://github.com/HEAVYPOLY/HEAVYPOLY_Blender/releases)
 
 ---
 
-The instructions below are for **4.x only**.
+## For maintainers / メンテナ向け
 
-### 🔹 Windows
+`build_release.py` handles releases. From the repository root:
 
-#### For the **portable version** of Blender:
-1. Open the folder where `blender.exe` is located.
-2. Create a new folder named:
-   ```
-   portable
-   ```
-3. Unzip the `HEAVYPOLY Config` and copy the folders ( Config and Scripts) into the "portable" folder you just created — you should now have:
-   ```
-   blender-folder/
-     └─ portable/
-         ├─ config/
-         └─ scripts/
-   ```
-   
-#### For the **installed version** of Blender:
-1. Unzip the downloaded `HEAVYPOLY Config`.
-2. Copy the folders named `config` and `scripts` into:  
-   ```
-   C:\Users\YOURUSERNAME\AppData\Roaming\Blender Foundation\Blender\5.2\
-   ```
-   > ⚠️ Replace `5.2` with your actual Blender version.  
-   > ⚠️ The `AppData` folder is hidden. Enable **"Show hidden files"** in your File Explorer settings to see it.
+```
+python build_release.py 1.4.0
+```
 
+It rewrites the version in `blender_manifest.toml`, zips the add-on into
+`docs/`, hashes it, and regenerates `docs/index.json`. Then commit and push.
 
-
-
-### 🔹 macOS
-
-1. In the **Applications** folder, right-click on the Blender app and choose **"Show Package Contents"**.
-2. Go to:
-   ```
-   Contents/Resources
-   ```
-3. Create a folder named:
-   ```
-   portable
-   ```
-4. Unzip the `HEAVYPOLY Config` and copy the folders ( Config and Scripts) into the "portable" folder you just created — you should now have:
-   ```
-   Blender.app/
-     └─ Contents/
-         └─ Resources/
-             └─ portable/
-                 ├─ config/
-                 └─ scripts/
-   ```
-
----
-
-## 🎥 Setup Video (for Blender 3.6 – 4.1)
-
-[Watch the installation tutorial on YouTube](https://www.youtube.com/watch?v=TRESMUenxa8)
+`docs/` and `build_release.py` are repository infrastructure. They are not part
+of the add-on and are excluded from the zip.

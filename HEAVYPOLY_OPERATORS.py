@@ -706,22 +706,76 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
         description="Distance in front of the selected object",
         default=1.0,
     )
+    shadeless: bpy.props.BoolProperty(
+        name="Shadeless",
+        description="Use Emission instead of Principled, so the image reads "
+                    "the same with no lights in the scene",
+        default=False,
+    )
 
     @classmethod
     def poll(cls, context):
         return context.mode == 'OBJECT'
 
-    def _grab_clipboard(self):
+    @staticmethod
+    def _find_image_editor(context):
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'IMAGE_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            return window, area, region
+        return None, None, None
+
+    def _grab_clipboard(self, context):
+        """image.clipboard_paste only works from inside an Image Editor.
+
+        temp_override alone was not enough - Blender still refused with "No
+        image to paste" - so switch a real area over for a moment and invoke it
+        the way the menu item does.
+        """
         before = set(bpy.data.images.keys())
+
+        def _added():
+            names = set(bpy.data.images.keys()) - before
+            return bpy.data.images[names.pop()] if names else None
+
+        # An Image Editor that is already open is the best case.
+        window, area, region = self._find_image_editor(context)
+        if area is not None:
+            try:
+                with context.temp_override(window=window, area=area,
+                                           region=region,
+                                           space_data=area.spaces.active):
+                    bpy.ops.image.clipboard_paste('INVOKE_DEFAULT')
+            except Exception as e:
+                print("[HEAVYPOLY] paste in existing editor failed: %r" % (e,))
+            image = _added()
+            if image is not None:
+                return image
+
+        # Otherwise borrow the largest area, flip it, paste, flip it back.
+        screen = context.screen
+        if screen is None or not screen.areas:
+            return None
+        area = max(screen.areas, key=lambda a: a.width * a.height)
+        previous_type = area.type
         try:
-            bpy.ops.image.clipboard_paste()
+            area.type = 'IMAGE_EDITOR'
+            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            with context.temp_override(window=context.window, area=area,
+                                       region=region,
+                                       space_data=area.spaces.active):
+                bpy.ops.image.clipboard_paste('INVOKE_DEFAULT')
         except Exception as e:
-            print("[HEAVYPOLY] clipboard paste failed: %r" % (e,))
-            return None
-        new_names = set(bpy.data.images.keys()) - before
-        if not new_names:
-            return None
-        return bpy.data.images[new_names.pop()]
+            print("[HEAVYPOLY] paste in borrowed editor failed: %r" % (e,))
+        finally:
+            try:
+                area.type = previous_type
+            except Exception:
+                pass
+
+        return _added()
 
     def _store_image(self, image):
         """Write next to the .blend when saved, otherwise pack it in.
@@ -761,7 +815,6 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
     def _make_material(self, image):
         material = bpy.data.materials.new(name=image.name)
         material.use_nodes = True
-        material.blend_method = 'BLEND' if image.depth in (32, 64) else 'OPAQUE'
 
         nodes = material.node_tree.nodes
         links = material.node_tree.links
@@ -769,23 +822,50 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
 
         output = nodes.new('ShaderNodeOutputMaterial')
         output.location = (300, 0)
-        emission = nodes.new('ShaderNodeEmission')
-        emission.location = (60, 0)
-        texture = nodes.new('ShaderNodeTexImage')
-        texture.location = (-260, 0)
-        texture.image = image
 
-        links.new(texture.outputs['Color'], emission.inputs['Color'])
-        links.new(emission.outputs['Emission'], output.inputs['Surface'])
-        try:
-            links.new(texture.outputs['Alpha'], output.inputs['Surface'])
-            links.remove(output.inputs['Surface'].links[0])
-        except Exception:
-            pass
+        if self.shadeless:
+            shader = nodes.new('ShaderNodeEmission')
+            colour_input = 'Color'
+        else:
+            shader = nodes.new('ShaderNodeBsdfPrincipled')
+            colour_input = 'Base Color'
+        shader.location = (0, 0)
+
+        texture = nodes.new('ShaderNodeTexImage')
+        texture.location = (-340, 0)
+        texture.image = image
+        texture.interpolation = 'Cubic'
+
+        links.new(texture.outputs['Color'], shader.inputs[colour_input])
+        links.new(shader.outputs[0], output.inputs['Surface'])
+
+        # Wire alpha through so cut-out PNGs read correctly.
+        has_alpha = image.depth in (32, 64)
+        if has_alpha:
+            if 'Alpha' in shader.inputs:
+                links.new(texture.outputs['Alpha'], shader.inputs['Alpha'])
+            else:
+                mix = nodes.new('ShaderNodeMixShader')
+                mix.location = (150, -160)
+                transparent = nodes.new('ShaderNodeBsdfTransparent')
+                transparent.location = (0, -220)
+                links.new(texture.outputs['Alpha'], mix.inputs['Fac'])
+                links.new(transparent.outputs[0], mix.inputs[1])
+                links.new(shader.outputs[0], mix.inputs[2])
+                links.new(mix.outputs[0], output.inputs['Surface'])
+
+            for attr, value in (("blend_method", 'BLEND'),
+                                ("surface_render_method", 'BLENDED')):
+                if hasattr(material, attr):
+                    try:
+                        setattr(material, attr, value)
+                    except Exception:
+                        pass
+
         return material
 
     def execute(self, context):
-        image = self._grab_clipboard()
+        image = self._grab_clipboard(context)
         if image is None:
             self.report({'WARNING'}, "No image on the clipboard.")
             return {'CANCELLED'}

@@ -413,6 +413,56 @@ def disable_pie_kmi(km, menu_name, type, value, shift=False, ctrl=False,
             first_interval=0.1)
 
 
+
+def Keymap_Heavypoly_TransformModal():
+    """Space locks to Y while a transform is running.
+
+    Move / Rotate / Scale all share the Transform Modal Map, so one entry
+    covers all three. X and Z are Blender defaults and left alone.
+
+    This used to live in the shipped userpref.blend rather than in code, so it
+    vanished the moment anyone reset their keymap.
+    """
+    kc = bpy.context.window_manager.keyconfigs.addon
+    if kc is None:
+        return
+    try:
+        km = kc.keymaps.new(name='Transform Modal Map', space_type='EMPTY',
+                            region_type='WINDOW', modal=True)
+        km.keymap_items.new_modal('AXIS_Y', 'SPACE', 'PRESS')
+        print("[HEAVYPOLY] Space = Y axis lock registered")
+    except Exception as e:
+        print("[HEAVYPOLY] transform modal keymap failed: %r" % (e,))
+
+
+
+def disable_modal_kmi(km, propvalue, type, value, retries=10):
+    """Switch off a stock entry in a modal keymap.
+
+    Modal items are identified by propvalue rather than an operator name.
+    """
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.get('Blender')
+    keymap = kc.keymaps.get(km) if kc else None
+    if keymap is None:
+        print("[HEAVYPOLY] modal keymap '%s' not found - skipped" % km)
+        return
+
+    for kmi in keymap.keymap_items:
+        if getattr(kmi, 'propvalue', None) != propvalue:
+            continue
+        if (kmi.type, kmi.value) != (type, value):
+            continue
+        kmi.active = False
+        print("Disabled modal", propvalue)
+        return
+
+    if retries > 0:
+        bpy.app.timers.register(
+            lambda: disable_modal_kmi(km, propvalue, type, value, retries - 1),
+            first_interval=0.1)
+
+
 #Function to disable keymap confict
 def disable_default_kmi(km=None, idname=None, retries=1):
     wm = bpy.context.window_manager
@@ -527,6 +577,7 @@ def register():
     Keymap_Heavypoly_GP()
     Keymap_Heavypoly_TransferMode()
     Keymap_Heavypoly_Symmetry()
+    Keymap_Heavypoly_TransformModal()
 
     _record_new_items(kc, before)
     print("[HEAVYPOLY] registered %d keymap items" % len(addon_keymaps))
@@ -552,6 +603,7 @@ def register():
     # E is HEAVYPOLY's Extrude to Cursor. Blender puts its own extrude on the
     # same key in the same keymap, so both fired and the new vertex followed
     # the mouse instead of staying put.
+    disable_modal_kmi('Transform Modal Map', 'CONFIRM', 'SPACE', 'PRESS')
     disable_specific_kmi('Mesh', 'view3d.edit_mesh_extrude_move_normal',
                          'E', 'PRESS', False, False, False)
     # Z is HEAVYPOLY's shading pie; Blender's own shading pie sits on the same

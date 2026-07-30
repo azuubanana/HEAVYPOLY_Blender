@@ -43,7 +43,7 @@ def Keymap_Heavypoly():
         #kmi = km.keymap_items.new("view3d.hp_duplicate_move","D","PRESS", shift=True)
 #        kmi = km.keymap_items.new("wm.call_menu_pie","SPACE","PRESS", shift=True).properties.name='HP_MT_popup_uber'
 #        kmi = km.keymap_items.new("wm.call_menu_pie","Z","PRESS").properties.name='HP_MT_popup_uber'
-        kmi = km.keymap_items.new("popup.hp_properties", 'V',"PRESS", ctrl=True, shift=True)
+        kmi = km.keymap_items.new("popup.hp_properties", 'P',"PRESS", ctrl=True, shift=True)
         kmi = km.keymap_items.new("popup.hp_materials", 'V',"PRESS", shift=True)
     # kmi = km.keymap_items.new('gpencil.blank_frame_add', 'B', 'PRESS', key_modifier='FOUR')
 # "ACCENT_GRAVE"
@@ -151,7 +151,7 @@ def Keymap_Heavypoly():
     kmi = km.keymap_items.new("wm.call_menu_pie", k_menu, 'PRESS',ctrl=True, alt=True).properties.name="HP_MT_pie_rotate90"
     kmi = km.keymap_items.new("wm.call_menu_pie", 'V', 'PRESS').properties.name="HP_MT_pie_view"
     kmi = km.keymap_items.new('wm.call_menu_pie', k_menu,'PRESS',ctrl=True, shift=True).properties.name="HP_MT_pie_pivots"
-    kmi = km.keymap_items.new('object.hp_paste_image_plane', 'V', 'PRESS', ctrl=True, alt=True)
+    kmi = km.keymap_items.new('object.hp_paste_image_plane', 'V', 'PRESS', ctrl=True, shift=True)
     kmi = km.keymap_items.new("wm.call_menu_pie","Z","PRESS").properties.name="HP_MT_pie_shading"
     kmi = km.keymap_items.new("wm.call_menu_pie","D","PRESS",ctrl=True, shift=True).properties.name="HP_MT_pie_specials"
     kmi = km.keymap_items.new("wm.call_menu_pie","ONE","PRESS").properties.name="HP_MT_pie_modifiers"

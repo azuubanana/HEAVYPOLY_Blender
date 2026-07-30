@@ -633,6 +633,8 @@ class OBJECT_OT_select_camera_hidden(bpy.types.Operator):
 def draw_func(self, context):
     layout = self.layout
     layout.separator()
+    layout.operator("object.hp_key_out_background", icon='IMAGE_ALPHA')
+    layout.separator()
     layout.operator("object.set_camera_off_wire", icon='HIDE_ON')
     layout.operator("object.set_camera_on_textured", icon='HIDE_OFF')
     layout.operator("object.select_camera_hidden", icon='RESTRICT_VIEW_ON')
@@ -773,6 +775,30 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
         ],
         default='DITHERED',
     )
+    key_out: bpy.props.BoolProperty(
+        name="Key Out Background",
+        description="Make one colour transparent, for images with no alpha",
+        default=False,
+    )
+    key_color: bpy.props.FloatVectorProperty(
+        name="Key Colour", subtype='COLOR', size=3,
+        min=0.0, max=1.0, default=(1.0, 1.0, 1.0),
+    )
+    threshold: bpy.props.FloatProperty(
+        name="Threshold",
+        description="How close a pixel has to be to the key colour",
+        default=0.10, min=0.0, max=1.732,
+    )
+    softness: bpy.props.FloatProperty(
+        name="Softness",
+        description="Width of the fade at the edge of the key",
+        default=0.05, min=0.0, max=1.0,
+    )
+    key_invert: bpy.props.BoolProperty(
+        name="Invert Key",
+        description="Keep the key colour and drop everything else",
+        default=False,
+    )
     shadeless: bpy.props.BoolProperty(
         name="Shadeless",
         description="Use Emission instead of Principled, so the image reads "
@@ -783,6 +809,25 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         return context.mode == 'OBJECT'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+
+        column = layout.column()
+        column.prop(self, "height")
+        column.prop(self, "offset")
+        column.prop(self, "shadeless")
+        column.prop(self, "render_method")
+
+        layout.separator()
+        layout.prop(self, "key_out")
+        keys = layout.column()
+        keys.enabled = self.key_out
+        keys.prop(self, "key_color")
+        keys.prop(self, "threshold")
+        keys.prop(self, "softness")
+        keys.prop(self, "key_invert")
 
     @staticmethod
     def _find_image_editor(context):
@@ -950,10 +995,116 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
         aspect = (width / height) if height else 1.0
         plane.scale = (self.height * aspect, self.height, 1.0)
 
-        plane.data.materials.append(self._make_material(image))
+        material = self._make_material(image)
+        plane.data.materials.append(material)
+
+        if self.key_out:
+            hp_apply_colour_key(material, self.key_color, self.threshold,
+                                self.softness, self.key_invert,
+                                self.render_method)
+        else:
+            hp_remove_colour_key(material)
 
         self.report({'INFO'}, "Pasted %s (%dx%d)" % (image.name, width, height))
         return {'FINISHED'}
+
+
+def hp_apply_colour_key(material, key_color, threshold, softness, invert,
+                        render_method='DITHERED'):
+    """Insert a colour-distance key between the image texture and the shader.
+
+    Any previous key is removed first, so calling this repeatedly - which is
+    what happens while dragging the sliders in the redo panel - never stacks
+    nodes up.
+    """
+    if not material.use_nodes:
+        return False
+
+    tree = material.node_tree
+    nodes = tree.nodes
+    links = tree.links
+
+    texture = next((n for n in nodes if n.type == 'TEX_IMAGE' and n.image), None)
+    if texture is None:
+        return False
+
+    shader = next((n for n in nodes
+                   if n.type in {'BSDF_PRINCIPLED', 'EMISSION'}), None)
+    if shader is None:
+        return False
+
+    for node in [n for n in nodes if n.label == "HP Key"]:
+        nodes.remove(node)
+
+    base_x, base_y = texture.location
+    offset_y = base_y - 320
+
+    difference = nodes.new('ShaderNodeMix')
+    difference.label = "HP Key"
+    difference.data_type = 'RGBA'
+    difference.blend_type = 'DIFFERENCE'
+    difference.location = (base_x + 200, offset_y)
+    difference.inputs['Factor'].default_value = 1.0
+    difference.inputs[7].default_value = (*key_color, 1.0)
+
+    distance = nodes.new('ShaderNodeVectorMath')
+    distance.label = "HP Key"
+    distance.operation = 'LENGTH'
+    distance.location = (base_x + 380, offset_y)
+
+    ramp = nodes.new('ShaderNodeMapRange')
+    ramp.label = "HP Key"
+    ramp.location = (base_x + 560, offset_y)
+    ramp.inputs['From Min'].default_value = threshold
+    ramp.inputs['From Max'].default_value = threshold + max(softness, 1e-4)
+    ramp.inputs['To Min'].default_value = 1.0 if invert else 0.0
+    ramp.inputs['To Max'].default_value = 0.0 if invert else 1.0
+    ramp.clamp = True
+
+    links.new(texture.outputs['Color'], difference.inputs[6])
+    links.new(difference.outputs[2], distance.inputs[0])
+    links.new(distance.outputs['Value'], ramp.inputs['Value'])
+
+    if 'Alpha' in shader.inputs:
+        links.new(ramp.outputs['Result'], shader.inputs['Alpha'])
+    else:
+        output = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+        if output is None:
+            return False
+        mix = nodes.new('ShaderNodeMixShader')
+        mix.label = "HP Key"
+        mix.location = (base_x + 760, offset_y)
+        transparent = nodes.new('ShaderNodeBsdfTransparent')
+        transparent.label = "HP Key"
+        transparent.location = (base_x + 560, offset_y - 160)
+        links.new(ramp.outputs['Result'], mix.inputs['Fac'])
+        links.new(transparent.outputs[0], mix.inputs[1])
+        links.new(shader.outputs[0], mix.inputs[2])
+        links.new(mix.outputs[0], output.inputs['Surface'])
+
+    hp_set_transparency(material, render_method)
+    return True
+
+
+def hp_remove_colour_key(material):
+    """Take the key back out and reconnect the shader directly."""
+    if not material.use_nodes:
+        return False
+
+    tree = material.node_tree
+    nodes = tree.nodes
+    keyed = [n for n in nodes if n.label == "HP Key"]
+    if not keyed:
+        return False
+
+    shader = next((n for n in nodes
+                   if n.type in {'BSDF_PRINCIPLED', 'EMISSION'}), None)
+    output = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+    for node in keyed:
+        nodes.remove(node)
+    if shader is not None and output is not None and not output.inputs['Surface'].links:
+        tree.links.new(shader.outputs[0], output.inputs['Surface'])
+    return True
 
 
 class HP_OT_key_out_background(bpy.types.Operator):
@@ -963,26 +1114,18 @@ class HP_OT_key_out_background(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     key_color: bpy.props.FloatVectorProperty(
-        name="Key Colour",
-        subtype='COLOR',
-        size=3,
-        min=0.0,
-        max=1.0,
-        default=(1.0, 1.0, 1.0),
+        name="Key Colour", subtype='COLOR', size=3,
+        min=0.0, max=1.0, default=(1.0, 1.0, 1.0),
     )
     threshold: bpy.props.FloatProperty(
         name="Threshold",
         description="How close a pixel has to be to the key colour",
-        default=0.10,
-        min=0.0,
-        max=1.732,
+        default=0.10, min=0.0, max=1.732,
     )
     softness: bpy.props.FloatProperty(
         name="Softness",
         description="Width of the fade at the edge of the key",
-        default=0.05,
-        min=0.0,
-        max=1.0,
+        default=0.05, min=0.0, max=1.0,
     )
     invert: bpy.props.BoolProperty(
         name="Invert",
@@ -1002,77 +1145,6 @@ class HP_OT_key_out_background(bpy.types.Operator):
     def poll(cls, context):
         return context.mode == 'OBJECT' and context.selected_objects
 
-    def _key_material(self, material):
-        """Insert a colour-distance key between the texture and the shader."""
-        if not material.use_nodes:
-            return False
-
-        tree = material.node_tree
-        nodes = tree.nodes
-        links = tree.links
-
-        texture = next((n for n in nodes if n.type == 'TEX_IMAGE' and n.image), None)
-        if texture is None:
-            return False
-
-        shader = next((n for n in nodes
-                       if n.type in {'BSDF_PRINCIPLED', 'EMISSION'}), None)
-        if shader is None:
-            return False
-
-        # Remove a previous key so repeated runs don't stack up.
-        for node in [n for n in nodes if n.label == "HP Key"]:
-            nodes.remove(node)
-
-        base_x, base_y = texture.location
-        offset_y = base_y - 320
-
-        difference = nodes.new('ShaderNodeMix')
-        difference.label = "HP Key"
-        difference.data_type = 'RGBA'
-        difference.blend_type = 'DIFFERENCE'
-        difference.location = (base_x + 200, offset_y)
-        difference.inputs['Factor'].default_value = 1.0
-        difference.inputs[7].default_value = (*self.key_color, 1.0)
-
-        distance = nodes.new('ShaderNodeVectorMath')
-        distance.label = "HP Key"
-        distance.operation = 'LENGTH'
-        distance.location = (base_x + 380, offset_y)
-
-        ramp = nodes.new('ShaderNodeMapRange')
-        ramp.label = "HP Key"
-        ramp.location = (base_x + 560, offset_y)
-        ramp.inputs['From Min'].default_value = self.threshold
-        ramp.inputs['From Max'].default_value = self.threshold + max(self.softness, 1e-4)
-        ramp.inputs['To Min'].default_value = 1.0 if self.invert else 0.0
-        ramp.inputs['To Max'].default_value = 0.0 if self.invert else 1.0
-        ramp.clamp = True
-
-        links.new(texture.outputs['Color'], difference.inputs[6])
-        links.new(difference.outputs[2], distance.inputs[0])
-        links.new(distance.outputs['Value'], ramp.inputs['Value'])
-
-        if 'Alpha' in shader.inputs:
-            links.new(ramp.outputs['Result'], shader.inputs['Alpha'])
-        else:
-            output = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
-            if output is None:
-                return False
-            mix = nodes.new('ShaderNodeMixShader')
-            mix.label = "HP Key"
-            mix.location = (base_x + 760, offset_y)
-            transparent = nodes.new('ShaderNodeBsdfTransparent')
-            transparent.label = "HP Key"
-            transparent.location = (base_x + 560, offset_y - 160)
-            links.new(ramp.outputs['Result'], mix.inputs['Fac'])
-            links.new(transparent.outputs[0], mix.inputs[1])
-            links.new(shader.outputs[0], mix.inputs[2])
-            links.new(mix.outputs[0], output.inputs['Surface'])
-
-        hp_set_transparency(material, self.render_method)
-        return True
-
     def execute(self, context):
         done = 0
         seen = set()
@@ -1082,7 +1154,9 @@ class HP_OT_key_out_background(bpy.types.Operator):
                 if material is None or material.name in seen:
                     continue
                 seen.add(material.name)
-                if self._key_material(material):
+                if hp_apply_colour_key(material, self.key_color, self.threshold,
+                                       self.softness, self.invert,
+                                       self.render_method):
                     done += 1
 
         if not done:

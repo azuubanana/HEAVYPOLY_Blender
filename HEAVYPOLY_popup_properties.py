@@ -195,7 +195,7 @@ class HP_MT_popup_properties(bpy.types.Operator):
                 col.prop(actdat, "show_cone")
             col.label(text='Shadows')
             col.prop(actdat, "shadow_buffer_clip_start", text="Clip Start")
-            col.prop(actdat, "shadow_buffer_bias", text="Bias")
+            # col.prop(actdat, "shadow_buffer_bias", text="Bias")  # removed in EEVEE Next
             col.prop(actdat, "cutoff_distance", text="Distance")
 
             # col.prop(actdat, "use_contact_shadow", text="Use Contact Shadows")
@@ -210,10 +210,10 @@ class HP_MT_popup_properties(bpy.types.Operator):
             row=col2.row()
             row.scale_x=.2
             # row.prop(props, "shadow_method", text='')
-            row.prop(props, "shadow_cube_size", text="")
-            row.prop(props, "shadow_cascade_size", text="")
-            col2.prop(props, "use_shadow_high_bitdepth")
-            col2.prop(props, "use_soft_shadows")
+            # row.prop(props, "shadow_cube_size", text="")  # removed in EEVEE Next
+            # row.prop(props, "shadow_cascade_size", text="")  # removed in EEVEE Next
+            # col2.prop(props, "use_shadow_high_bitdepth")  # removed in EEVEE Next
+            # col2.prop(props, "use_soft_shadows")  # removed in EEVEE Next
             col2.prop(props, "taa_samples")
             col2.prop(props, "taa_render_samples")
 

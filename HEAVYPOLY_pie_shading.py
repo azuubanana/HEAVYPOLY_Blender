@@ -81,7 +81,7 @@ class HP_MT_pie_shading(Menu):
         box = col.box()
         box.prop(overlay, "show_overlays", text="OVERLAYS")
         box.prop(overlay, "show_extras", text="EXTRAS")
-        box.prop(context.scene.eevee, "use_soft_shadows", text="SOFT SHADOWS")
+        # box.prop(context.scene.eevee, "use_soft_shadows", text="SOFT SHADOWS")  # removed in EEVEE Next
         # box.prop(overlay, "show_backface_culling", text="HIDE BACKFACES")
         box.prop(overlay, "show_cursor", text="3D CURSOR")
         box.operator("object.add_normal_modifier", text = 'Shade Smooth')

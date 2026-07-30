@@ -73,38 +73,50 @@ def register():
     addon_keymaps.append((km, kmi))
 
 def unregister():
-    # Unregister your scripts
-    HEAVYPOLY__menu_master.unregister()
-    HEAVYPOLY_draw_primitives.unregister()
-    HEAVYPOLY_HOTKEYS.unregister()
-    HEAVYPOLY_OPERATORS.unregister()
-    HEAVYPOLY_panel_properties.unregister()
-    HEAVYPOLY_panel_render.unregister()
-    HEAVYPOLY_pie_add.unregister()
-    HEAVYPOLY_pie_areas.unregister()
-    HEAVYPOLY_pie_boolean.unregister()
-    HEAVYPOLY_pie_import_export.unregister()
-    HEAVYPOLY_pie_pivots.unregister()
-    HEAVYPOLY_pie_rotate_90.unregister()
-    HEAVYPOLY_pie_save.unregister()
-    HEAVYPOLY_pie_selection.unregister()
-    HEAVYPOLY_pie_shading.unregister()
-    HEAVYPOLY_pie_specials.unregister()
-    HEAVYPOLY_pie_symmetry.unregister()
-    HEAVYPOLY_pie_view.unregister()
-    HEAVYPOLY_popup_materials.unregister()
-    HEAVYPOLY_popup_properties.unregister()
-    HEAVYPOLY_popup_render.unregister()
-    HEAVYPOLY_select_through_border.unregister()
-    jmQuickPipe.unregister()
-    HEAVYPOLY_pie_extra.unregister()
-    HEAVYPOLY_setup.unregister()
-    #script2.unregister()
+    # One module raising here used to abort the whole teardown, leaving parts
+    # of the add-on registered and the next enable failing with
+    # "already registered as a subclass".
+    for module in (
+        HEAVYPOLY__menu_master,
+        HEAVYPOLY_draw_primitives,
+        HEAVYPOLY_HOTKEYS,
+        HEAVYPOLY_OPERATORS,
+        HEAVYPOLY_panel_properties,
+        HEAVYPOLY_panel_render,
+        HEAVYPOLY_pie_add,
+        HEAVYPOLY_pie_areas,
+        HEAVYPOLY_pie_boolean,
+        HEAVYPOLY_pie_import_export,
+        HEAVYPOLY_pie_pivots,
+        HEAVYPOLY_pie_rotate_90,
+        HEAVYPOLY_pie_save,
+        HEAVYPOLY_pie_selection,
+        HEAVYPOLY_pie_shading,
+        HEAVYPOLY_pie_specials,
+        HEAVYPOLY_pie_symmetry,
+        HEAVYPOLY_pie_view,
+        HEAVYPOLY_popup_materials,
+        HEAVYPOLY_popup_properties,
+        HEAVYPOLY_popup_render,
+        HEAVYPOLY_select_through_border,
+        jmQuickPipe,
+        HEAVYPOLY_pie_extra,
+        HEAVYPOLY_setup,
+        #script2
+    ):
+        try:
+            module.unregister()
+        except Exception as e:
+            print("[HEAVYPOLY] %s.unregister() failed: %r" % (module.__name__, e))
 
-    # Unregister keyboard shortcuts
+    wm = bpy.context.window_manager
     for km, kmi in addon_keymaps:
-        km.keymap_items.remove(kmi)
+        try:
+            km.keymap_items.remove(kmi)
+        except Exception:
+            pass
     addon_keymaps.clear()
+
 
 if __name__ == "__main__":
     register()

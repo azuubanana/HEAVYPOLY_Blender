@@ -41,7 +41,7 @@ class HP_PT_render(bpy.types.Panel):
 
         col.label(text='WORLD')
         world = bpy.context.scene.world
-        col.prop(scene.eevee, "use_soft_shadows")
+        # col.prop(scene.eevee, "use_soft_shadows")  # removed in EEVEE Next
 
         # worldnodes = world.node_tree.nodes
         # actnode = worldnodes.active

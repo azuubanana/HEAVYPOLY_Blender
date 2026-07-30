@@ -196,7 +196,7 @@ class HP_OT_add_primitive(Operator):
                 context.active_object.name = 'Light Point'
                 context.object.data.energy = 200
                 context.object.data.shadow_soft_size = 0.3
-                context.object.data.shadow_buffer_bias = 0.1
+                # shadow_buffer_bias was removed in EEVEE Next
                 context.object.data.shadow_buffer_clip_start = 0.1
 
             elif t == 'Area_Light':
@@ -208,7 +208,7 @@ class HP_OT_add_primitive(Operator):
                 context.active_object.data.size_y = 3
                 context.active_object.data.energy = 200
                 context.active_object.data.shadow_soft_size = 0.3
-                context.active_object.data.shadow_buffer_bias = 0.1
+                # shadow_buffer_bias was removed in EEVEE Next
                 context.active_object.data.shadow_buffer_clip_start = 0.1
 
         # Save current transform orientation

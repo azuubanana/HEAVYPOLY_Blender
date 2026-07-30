@@ -38,7 +38,9 @@ class HP_MT_pie_importexport(Menu):
         box.operator('import_scene.fbx', text='Import FBX')
         box.operator('wm.stl_import', text='Import STL')
         box.operator('wm.obj_import', text='Import OBJ')
-        box.operator('import_image.to_plane', text='Import Image Plane')
+        # Images as Planes ships disabled, so its operator often isn't there.
+        # Our own clipboard version always is.
+        box.operator('object.hp_paste_image_plane', text='Paste Image as Plane')
         box.operator('wm.append', text = 'Append')
         box.operator("wm.link", text = "Link")
         #R

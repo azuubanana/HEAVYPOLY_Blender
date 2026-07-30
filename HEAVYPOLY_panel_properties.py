@@ -159,7 +159,7 @@ class HP_PT_object_properties(bpy.types.Panel):
             col2.prop(actdat, "shadow_buffer_clip_start", text="Clip Start")
             # col2.prop(actdat, "shadow_buffer_clip_end", text="End")
             # col2.prop(actdat, "shadow_buffer_soft", text="Fake Softness")
-            col2.prop(actdat, "shadow_buffer_bias", text="Contact Clip")
+            # col2.prop(actdat, "shadow_buffer_bias", text="Contact Clip")  # removed in EEVEE Next
             # col2.prop(actdat, "shadow_buffer_exp", text="Darkness")
             # col2.prop(actdat, "shadow_buffer_bleed_bias", text="Bleed Bias")
             col2.prop(actdat, "cutoff_distance", text="Distance")
@@ -170,10 +170,10 @@ class HP_PT_object_properties(bpy.types.Panel):
             row=col2.row()
             row.scale_x=.2
             #row.prop(props, "shadow_method", text='')
-            row.prop(props, "shadow_cube_size", text="")
-            row.prop(props, "shadow_cascade_size", text="")
-            col.prop(props, "use_shadow_high_bitdepth")
-            col.prop(props, "use_soft_shadows")
+            # row.prop(props, "shadow_cube_size", text="")  # removed in EEVEE Next
+            # row.prop(props, "shadow_cascade_size", text="")  # removed in EEVEE Next
+            # col.prop(props, "use_shadow_high_bitdepth")  # removed in EEVEE Next
+            # col.prop(props, "use_soft_shadows")  # removed in EEVEE Next
             col.prop(props, "taa_samples")
             col.prop(props, "taa_render_samples")
 

@@ -308,6 +308,19 @@ class HP_OT_draw_with_gp(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def _grow_gp_selection():
+    """Extend the Grease Pencil selection to whole strokes.
+
+    bpy.ops resolves attributes lazily, so hasattr() is always True and cannot
+    be used to test whether an operator exists. Just try it and catch.
+    """
+    try:
+        bpy.ops.grease_pencil.select_linked()
+    except Exception as e:
+        print("[HEAVYPOLY] grease_pencil.select_linked failed: %r" % (e,))
+    return None
+
+
 class HP_OT_gp_select_linked_pick(bpy.types.Operator):
     """Select the whole stroke under the mouse"""
     bl_idname = "grease_pencil.hp_select_linked_pick"
@@ -328,17 +341,9 @@ class HP_OT_gp_select_linked_pick(bpy.types.Operator):
             print("[HEAVYPOLY] could not pick a point: %r" % (e,))
             return {'CANCELLED'}
 
-        for module_name in ("grease_pencil", "gpencil"):
-            module = getattr(bpy.ops, module_name, None)
-            if module is None or not hasattr(module, "select_linked"):
-                continue
-            try:
-                module.select_linked()
-                return {'FINISHED'}
-            except RuntimeError as e:
-                print("[HEAVYPOLY] %s.select_linked failed: %r" % (module_name, e))
-
-        self.report({'WARNING'}, "No Grease Pencil select_linked operator found.")
+        # Growing has to wait a beat: called straight after view3d.select the
+        # poll still fails with "context is incorrect".
+        bpy.app.timers.register(_grow_gp_selection, first_interval=0.01)
         return {'FINISHED'}
 
 

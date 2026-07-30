@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "heavypoly"
-version = "1.16.0"
+version = "1.17.0"
 name = "HEAVYPOLY"
 tagline = "Pie menus and hotkeys for fast modelling"
 maintainer = "Vaughan Ling, Julien Gauthier, Azusa Tojo"

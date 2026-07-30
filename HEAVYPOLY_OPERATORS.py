@@ -689,6 +689,65 @@ class HP_OT_toggle_symmetry(bpy.types.Operator):
 
 # ---------------------------------------------------------------- clipboard
 
+# ---------------------------------------------------------------- images
+
+def hp_image_has_transparency(image, samples=4096):
+    """Does the image actually contain see-through pixels?
+
+    image.depth only says the format has an alpha channel. Clipboard images
+    are usually RGBA even when every pixel is opaque, and wiring alpha up for
+    those makes the plane flicker for no reason. So sample the real pixels.
+    """
+    if image is None or image.channels < 4:
+        return False
+
+    try:
+        pixel_count = image.size[0] * image.size[1]
+    except Exception:
+        return False
+    if pixel_count <= 0:
+        return False
+
+    try:
+        pixels = image.pixels[:]
+    except Exception:
+        return False
+
+    step = max(1, pixel_count // max(1, samples))
+    for index in range(0, pixel_count, step):
+        if pixels[index * 4 + 3] < 0.999:
+            return True
+
+    # Edges are where cut-outs live, so check the border explicitly.
+    width, height = image.size
+    for x in range(0, width, max(1, width // 64)):
+        for y in (0, height - 1):
+            if pixels[(y * width + x) * 4 + 3] < 0.999:
+                return True
+    for y in range(0, height, max(1, height // 64)):
+        for x in (0, width - 1):
+            if pixels[(y * width + x) * 4 + 3] < 0.999:
+                return True
+
+    return False
+
+
+def hp_set_transparency(material, method='DITHERED'):
+    """Blender 4.2 replaced blend_method with surface_render_method."""
+    if hasattr(material, "surface_render_method"):
+        try:
+            material.surface_render_method = method
+            return
+        except Exception as e:
+            print("[HEAVYPOLY] surface_render_method failed: %r" % (e,))
+    if hasattr(material, "blend_method"):
+        try:
+            material.blend_method = 'BLEND' if method == 'BLENDED' else 'CLIP'
+        except Exception as e:
+            print("[HEAVYPOLY] blend_method failed: %r" % (e,))
+
+
+
 class HP_OT_paste_image_plane(bpy.types.Operator):
     """Paste the image on the clipboard as a plane facing front"""
     bl_idname = "object.hp_paste_image_plane"
@@ -705,6 +764,14 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
         name="Offset",
         description="Distance in front of the selected object",
         default=1.0,
+    )
+    render_method: bpy.props.EnumProperty(
+        name="Transparency",
+        items=[
+            ('DITHERED', "Dithered", "No sorting artefacts, best for cut-outs"),
+            ('BLENDED', "Blended", "Accurate see-through, can flicker when planes overlap"),
+        ],
+        default='DITHERED',
     )
     shadeless: bpy.props.BoolProperty(
         name="Shadeless",
@@ -839,9 +906,8 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
         links.new(texture.outputs['Color'], shader.inputs[colour_input])
         links.new(shader.outputs[0], output.inputs['Surface'])
 
-        # Wire alpha through so cut-out PNGs read correctly.
-        has_alpha = image.depth in (32, 64)
-        if has_alpha:
+        # Only wire alpha when the image really is see-through.
+        if hp_image_has_transparency(image):
             if 'Alpha' in shader.inputs:
                 links.new(texture.outputs['Alpha'], shader.inputs['Alpha'])
             else:
@@ -854,13 +920,7 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
                 links.new(shader.outputs[0], mix.inputs[2])
                 links.new(mix.outputs[0], output.inputs['Surface'])
 
-            for attr, value in (("blend_method", 'BLEND'),
-                                ("surface_render_method", 'BLENDED')):
-                if hasattr(material, attr):
-                    try:
-                        setattr(material, attr, value)
-                    except Exception:
-                        pass
+            hp_set_transparency(material, self.render_method)
 
         return material
 
@@ -896,7 +956,145 @@ class HP_OT_paste_image_plane(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class HP_OT_key_out_background(bpy.types.Operator):
+    """Make one colour transparent on the selected objects"""
+    bl_idname = "object.hp_key_out_background"
+    bl_label = "Key Out Background"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    key_color: bpy.props.FloatVectorProperty(
+        name="Key Colour",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(1.0, 1.0, 1.0),
+    )
+    threshold: bpy.props.FloatProperty(
+        name="Threshold",
+        description="How close a pixel has to be to the key colour",
+        default=0.10,
+        min=0.0,
+        max=1.732,
+    )
+    softness: bpy.props.FloatProperty(
+        name="Softness",
+        description="Width of the fade at the edge of the key",
+        default=0.05,
+        min=0.0,
+        max=1.0,
+    )
+    invert: bpy.props.BoolProperty(
+        name="Invert",
+        description="Keep the key colour and drop everything else",
+        default=False,
+    )
+    render_method: bpy.props.EnumProperty(
+        name="Transparency",
+        items=[
+            ('DITHERED', "Dithered", "No sorting artefacts, best for cut-outs"),
+            ('BLENDED', "Blended", "Accurate see-through, can flicker when planes overlap"),
+        ],
+        default='DITHERED',
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'OBJECT' and context.selected_objects
+
+    def _key_material(self, material):
+        """Insert a colour-distance key between the texture and the shader."""
+        if not material.use_nodes:
+            return False
+
+        tree = material.node_tree
+        nodes = tree.nodes
+        links = tree.links
+
+        texture = next((n for n in nodes if n.type == 'TEX_IMAGE' and n.image), None)
+        if texture is None:
+            return False
+
+        shader = next((n for n in nodes
+                       if n.type in {'BSDF_PRINCIPLED', 'EMISSION'}), None)
+        if shader is None:
+            return False
+
+        # Remove a previous key so repeated runs don't stack up.
+        for node in [n for n in nodes if n.label == "HP Key"]:
+            nodes.remove(node)
+
+        base_x, base_y = texture.location
+        offset_y = base_y - 320
+
+        difference = nodes.new('ShaderNodeMix')
+        difference.label = "HP Key"
+        difference.data_type = 'RGBA'
+        difference.blend_type = 'DIFFERENCE'
+        difference.location = (base_x + 200, offset_y)
+        difference.inputs['Factor'].default_value = 1.0
+        difference.inputs[7].default_value = (*self.key_color, 1.0)
+
+        distance = nodes.new('ShaderNodeVectorMath')
+        distance.label = "HP Key"
+        distance.operation = 'LENGTH'
+        distance.location = (base_x + 380, offset_y)
+
+        ramp = nodes.new('ShaderNodeMapRange')
+        ramp.label = "HP Key"
+        ramp.location = (base_x + 560, offset_y)
+        ramp.inputs['From Min'].default_value = self.threshold
+        ramp.inputs['From Max'].default_value = self.threshold + max(self.softness, 1e-4)
+        ramp.inputs['To Min'].default_value = 1.0 if self.invert else 0.0
+        ramp.inputs['To Max'].default_value = 0.0 if self.invert else 1.0
+        ramp.clamp = True
+
+        links.new(texture.outputs['Color'], difference.inputs[6])
+        links.new(difference.outputs[2], distance.inputs[0])
+        links.new(distance.outputs['Value'], ramp.inputs['Value'])
+
+        if 'Alpha' in shader.inputs:
+            links.new(ramp.outputs['Result'], shader.inputs['Alpha'])
+        else:
+            output = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+            if output is None:
+                return False
+            mix = nodes.new('ShaderNodeMixShader')
+            mix.label = "HP Key"
+            mix.location = (base_x + 760, offset_y)
+            transparent = nodes.new('ShaderNodeBsdfTransparent')
+            transparent.label = "HP Key"
+            transparent.location = (base_x + 560, offset_y - 160)
+            links.new(ramp.outputs['Result'], mix.inputs['Fac'])
+            links.new(transparent.outputs[0], mix.inputs[1])
+            links.new(shader.outputs[0], mix.inputs[2])
+            links.new(mix.outputs[0], output.inputs['Surface'])
+
+        hp_set_transparency(material, self.render_method)
+        return True
+
+    def execute(self, context):
+        done = 0
+        seen = set()
+        for obj in context.selected_objects:
+            for slot in getattr(obj, "material_slots", []):
+                material = slot.material
+                if material is None or material.name in seen:
+                    continue
+                seen.add(material.name)
+                if self._key_material(material):
+                    done += 1
+
+        if not done:
+            self.report({'WARNING'}, "No image texture found on the selection.")
+            return {'CANCELLED'}
+
+        self.report({'INFO'}, "Keyed %d material(s)." % done)
+        return {'FINISHED'}
+
+
 classes = (
+    HP_OT_key_out_background,
     HP_OT_paste_image_plane,
     HP_OT_toggle_symmetry,
     HP_OT_SaveWithoutPrompt,

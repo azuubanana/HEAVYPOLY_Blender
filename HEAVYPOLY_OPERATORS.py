@@ -731,6 +731,484 @@ class HP_OT_toggle_symmetry(bpy.types.Operator):
         return {'CANCELLED'}
 
 
+# ---------------------------------------------------------------- clipboard
+
+# ---------------------------------------------------------------- images
+
+def hp_image_has_transparency(image, samples=4096):
+    """Does the image actually contain see-through pixels?
+
+    image.depth only says the format has an alpha channel. Clipboard images
+    are usually RGBA even when every pixel is opaque, and wiring alpha up for
+    those makes the plane flicker for no reason. So sample the real pixels.
+    """
+    if image is None or image.channels < 4:
+        return False
+
+    try:
+        pixel_count = image.size[0] * image.size[1]
+    except Exception:
+        return False
+    if pixel_count <= 0:
+        return False
+
+    try:
+        pixels = image.pixels[:]
+    except Exception:
+        return False
+
+    step = max(1, pixel_count // max(1, samples))
+    for index in range(0, pixel_count, step):
+        if pixels[index * 4 + 3] < 0.999:
+            return True
+
+    # Edges are where cut-outs live, so check the border explicitly.
+    width, height = image.size
+    for x in range(0, width, max(1, width // 64)):
+        for y in (0, height - 1):
+            if pixels[(y * width + x) * 4 + 3] < 0.999:
+                return True
+    for y in range(0, height, max(1, height // 64)):
+        for x in (0, width - 1):
+            if pixels[(y * width + x) * 4 + 3] < 0.999:
+                return True
+
+    return False
+
+
+def hp_set_transparency(material, method='DITHERED'):
+    """Blender 4.2 replaced blend_method with surface_render_method."""
+    if hasattr(material, "surface_render_method"):
+        try:
+            material.surface_render_method = method
+            return
+        except Exception as e:
+            print("[HEAVYPOLY] surface_render_method failed: %r" % (e,))
+    if hasattr(material, "blend_method"):
+        try:
+            material.blend_method = 'BLEND' if method == 'BLENDED' else 'CLIP'
+        except Exception as e:
+            print("[HEAVYPOLY] blend_method failed: %r" % (e,))
+
+
+
+class HP_OT_paste_image_plane(bpy.types.Operator):
+    """Paste the image on the clipboard as a plane facing front"""
+    bl_idname = "object.hp_paste_image_plane"
+    bl_label = "Paste Image as Plane"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    height: bpy.props.FloatProperty(
+        name="Height",
+        description="Height of the plane in metres",
+        default=2.0,
+        min=0.001,
+    )
+    offset: bpy.props.FloatProperty(
+        name="Offset",
+        description="Distance in front of the selected object",
+        default=1.0,
+    )
+    render_method: bpy.props.EnumProperty(
+        name="Transparency",
+        items=[
+            ('DITHERED', "Dithered", "No sorting artefacts, best for cut-outs"),
+            ('BLENDED', "Blended", "Accurate see-through, can flicker when planes overlap"),
+        ],
+        default='DITHERED',
+    )
+    key_out: bpy.props.BoolProperty(
+        name="Key Out Background",
+        description="Make one colour transparent, for images with no alpha",
+        default=False,
+    )
+    key_color: bpy.props.FloatVectorProperty(
+        name="Key Colour", subtype='COLOR', size=3,
+        min=0.0, max=1.0, default=(1.0, 1.0, 1.0),
+    )
+    threshold: bpy.props.FloatProperty(
+        name="Threshold",
+        description="How close a pixel has to be to the key colour",
+        default=0.10, min=0.0, max=1.732,
+    )
+    softness: bpy.props.FloatProperty(
+        name="Softness",
+        description="Width of the fade at the edge of the key",
+        default=0.05, min=0.0, max=1.0,
+    )
+    key_invert: bpy.props.BoolProperty(
+        name="Invert Key",
+        description="Keep the key colour and drop everything else",
+        default=False,
+    )
+    shadeless: bpy.props.BoolProperty(
+        name="Shadeless",
+        description="Use Emission instead of Principled, so the image reads "
+                    "the same with no lights in the scene",
+        default=False,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'OBJECT'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+
+        column = layout.column()
+        column.prop(self, "height")
+        column.prop(self, "offset")
+        column.prop(self, "shadeless")
+        column.prop(self, "render_method")
+
+        layout.separator()
+        layout.prop(self, "key_out")
+        keys = layout.column()
+        keys.enabled = self.key_out
+        keys.prop(self, "key_color")
+        keys.prop(self, "threshold")
+        keys.prop(self, "softness")
+        keys.prop(self, "key_invert")
+
+    @staticmethod
+    def _find_image_editor(context):
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'IMAGE_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            return window, area, region
+        return None, None, None
+
+    def _grab_clipboard(self, context):
+        """image.clipboard_paste only works from inside an Image Editor.
+
+        temp_override alone was not enough - Blender still refused with "No
+        image to paste" - so switch a real area over for a moment and invoke it
+        the way the menu item does.
+        """
+        before = set(bpy.data.images.keys())
+
+        def _added():
+            names = set(bpy.data.images.keys()) - before
+            return bpy.data.images[names.pop()] if names else None
+
+        # An Image Editor that is already open is the best case.
+        window, area, region = self._find_image_editor(context)
+        if area is not None:
+            try:
+                with context.temp_override(window=window, area=area,
+                                           region=region,
+                                           space_data=area.spaces.active):
+                    bpy.ops.image.clipboard_paste('INVOKE_DEFAULT')
+            except Exception as e:
+                print("[HEAVYPOLY] paste in existing editor failed: %r" % (e,))
+            image = _added()
+            if image is not None:
+                return image
+
+        # Otherwise borrow the largest area, flip it, paste, flip it back.
+        screen = context.screen
+        if screen is None or not screen.areas:
+            return None
+        area = max(screen.areas, key=lambda a: a.width * a.height)
+        previous_type = area.type
+        try:
+            area.type = 'IMAGE_EDITOR'
+            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            with context.temp_override(window=context.window, area=area,
+                                       region=region,
+                                       space_data=area.spaces.active):
+                bpy.ops.image.clipboard_paste('INVOKE_DEFAULT')
+        except Exception as e:
+            print("[HEAVYPOLY] paste in borrowed editor failed: %r" % (e,))
+        finally:
+            try:
+                area.type = previous_type
+            except Exception:
+                pass
+
+        return _added()
+
+    def _store_image(self, image):
+        """Write next to the .blend when saved, otherwise pack it in.
+
+        Either way the image survives closing Blender, which the raw clipboard
+        paste does not.
+        """
+        blend_path = bpy.data.filepath
+        if not blend_path:
+            try:
+                image.pack()
+                print("[HEAVYPOLY] image packed into the .blend")
+            except Exception as e:
+                print("[HEAVYPOLY] could not pack the image: %r" % (e,))
+            return
+
+        folder = os.path.join(os.path.dirname(blend_path), "textures")
+        try:
+            os.makedirs(folder, exist_ok=True)
+            name = bpy.path.clean_name(image.name) or "pasted"
+            target = os.path.join(folder, name + ".png")
+            index = 1
+            while os.path.exists(target):
+                target = os.path.join(folder, "%s_%03d.png" % (name, index))
+                index += 1
+            image.filepath_raw = target
+            image.file_format = 'PNG'
+            image.save()
+            print("[HEAVYPOLY] image saved to %s" % target)
+        except Exception as e:
+            print("[HEAVYPOLY] could not save the image, packing instead: %r" % (e,))
+            try:
+                image.pack()
+            except Exception:
+                pass
+
+    def _make_material(self, image):
+        material = bpy.data.materials.new(name=image.name)
+        material.use_nodes = True
+
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+        nodes.clear()
+
+        output = nodes.new('ShaderNodeOutputMaterial')
+        output.location = (300, 0)
+
+        if self.shadeless:
+            shader = nodes.new('ShaderNodeEmission')
+            colour_input = 'Color'
+        else:
+            shader = nodes.new('ShaderNodeBsdfPrincipled')
+            colour_input = 'Base Color'
+        shader.location = (0, 0)
+
+        texture = nodes.new('ShaderNodeTexImage')
+        texture.location = (-340, 0)
+        texture.image = image
+        texture.interpolation = 'Cubic'
+
+        links.new(texture.outputs['Color'], shader.inputs[colour_input])
+        links.new(shader.outputs[0], output.inputs['Surface'])
+
+        # Only wire alpha when the image really is see-through.
+        if hp_image_has_transparency(image):
+            if 'Alpha' in shader.inputs:
+                links.new(texture.outputs['Alpha'], shader.inputs['Alpha'])
+            else:
+                mix = nodes.new('ShaderNodeMixShader')
+                mix.location = (150, -160)
+                transparent = nodes.new('ShaderNodeBsdfTransparent')
+                transparent.location = (0, -220)
+                links.new(texture.outputs['Alpha'], mix.inputs['Fac'])
+                links.new(transparent.outputs[0], mix.inputs[1])
+                links.new(shader.outputs[0], mix.inputs[2])
+                links.new(mix.outputs[0], output.inputs['Surface'])
+
+            hp_set_transparency(material, self.render_method)
+
+        return material
+
+    def execute(self, context):
+        image = self._grab_clipboard(context)
+        if image is None:
+            self.report({'WARNING'}, "No image on the clipboard.")
+            return {'CANCELLED'}
+
+        self._store_image(image)
+
+        target = context.active_object
+        if target is not None and target.select_get():
+            # In front of the object, along its local -Y.
+            location = target.matrix_world @ Vector((0.0, -self.offset, 0.0))
+        else:
+            location = context.scene.cursor.location.copy()
+
+        bpy.ops.mesh.primitive_plane_add(size=1.0, align='WORLD', location=location)
+        plane = context.active_object
+        plane.name = image.name
+
+        # Stand it up facing -Y, so it reads correctly in front view.
+        plane.rotation_euler = (math.radians(90.0), 0.0, 0.0)
+
+        width, height = image.size
+        aspect = (width / height) if height else 1.0
+        plane.scale = (self.height * aspect, self.height, 1.0)
+
+        material = self._make_material(image)
+        plane.data.materials.append(material)
+
+        if self.key_out:
+            hp_apply_colour_key(material, self.key_color, self.threshold,
+                                self.softness, self.key_invert,
+                                self.render_method)
+        else:
+            hp_remove_colour_key(material)
+
+        self.report({'INFO'}, "Pasted %s (%dx%d)" % (image.name, width, height))
+        return {'FINISHED'}
+
+
+def hp_apply_colour_key(material, key_color, threshold, softness, invert,
+                        render_method='DITHERED'):
+    """Insert a colour-distance key between the image texture and the shader.
+
+    Any previous key is removed first, so calling this repeatedly - which is
+    what happens while dragging the sliders in the redo panel - never stacks
+    nodes up.
+    """
+    if not material.use_nodes:
+        return False
+
+    tree = material.node_tree
+    nodes = tree.nodes
+    links = tree.links
+
+    texture = next((n for n in nodes if n.type == 'TEX_IMAGE' and n.image), None)
+    if texture is None:
+        return False
+
+    shader = next((n for n in nodes
+                   if n.type in {'BSDF_PRINCIPLED', 'EMISSION'}), None)
+    if shader is None:
+        return False
+
+    for node in [n for n in nodes if n.label == "HP Key"]:
+        nodes.remove(node)
+
+    base_x, base_y = texture.location
+    offset_y = base_y - 320
+
+    difference = nodes.new('ShaderNodeMix')
+    difference.label = "HP Key"
+    difference.data_type = 'RGBA'
+    difference.blend_type = 'DIFFERENCE'
+    difference.location = (base_x + 200, offset_y)
+    difference.inputs['Factor'].default_value = 1.0
+    difference.inputs[7].default_value = (*key_color, 1.0)
+
+    distance = nodes.new('ShaderNodeVectorMath')
+    distance.label = "HP Key"
+    distance.operation = 'LENGTH'
+    distance.location = (base_x + 380, offset_y)
+
+    ramp = nodes.new('ShaderNodeMapRange')
+    ramp.label = "HP Key"
+    ramp.location = (base_x + 560, offset_y)
+    ramp.inputs['From Min'].default_value = threshold
+    ramp.inputs['From Max'].default_value = threshold + max(softness, 1e-4)
+    ramp.inputs['To Min'].default_value = 1.0 if invert else 0.0
+    ramp.inputs['To Max'].default_value = 0.0 if invert else 1.0
+    ramp.clamp = True
+
+    links.new(texture.outputs['Color'], difference.inputs[6])
+    links.new(difference.outputs[2], distance.inputs[0])
+    links.new(distance.outputs['Value'], ramp.inputs['Value'])
+
+    if 'Alpha' in shader.inputs:
+        links.new(ramp.outputs['Result'], shader.inputs['Alpha'])
+    else:
+        output = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+        if output is None:
+            return False
+        mix = nodes.new('ShaderNodeMixShader')
+        mix.label = "HP Key"
+        mix.location = (base_x + 760, offset_y)
+        transparent = nodes.new('ShaderNodeBsdfTransparent')
+        transparent.label = "HP Key"
+        transparent.location = (base_x + 560, offset_y - 160)
+        links.new(ramp.outputs['Result'], mix.inputs['Fac'])
+        links.new(transparent.outputs[0], mix.inputs[1])
+        links.new(shader.outputs[0], mix.inputs[2])
+        links.new(mix.outputs[0], output.inputs['Surface'])
+
+    hp_set_transparency(material, render_method)
+    return True
+
+
+def hp_remove_colour_key(material):
+    """Take the key back out and reconnect the shader directly."""
+    if not material.use_nodes:
+        return False
+
+    tree = material.node_tree
+    nodes = tree.nodes
+    keyed = [n for n in nodes if n.label == "HP Key"]
+    if not keyed:
+        return False
+
+    shader = next((n for n in nodes
+                   if n.type in {'BSDF_PRINCIPLED', 'EMISSION'}), None)
+    output = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+    for node in keyed:
+        nodes.remove(node)
+    if shader is not None and output is not None and not output.inputs['Surface'].links:
+        tree.links.new(shader.outputs[0], output.inputs['Surface'])
+    return True
+
+
+class HP_OT_key_out_background(bpy.types.Operator):
+    """Make one colour transparent on the selected objects"""
+    bl_idname = "object.hp_key_out_background"
+    bl_label = "Key Out Background"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    key_color: bpy.props.FloatVectorProperty(
+        name="Key Colour", subtype='COLOR', size=3,
+        min=0.0, max=1.0, default=(1.0, 1.0, 1.0),
+    )
+    threshold: bpy.props.FloatProperty(
+        name="Threshold",
+        description="How close a pixel has to be to the key colour",
+        default=0.10, min=0.0, max=1.732,
+    )
+    softness: bpy.props.FloatProperty(
+        name="Softness",
+        description="Width of the fade at the edge of the key",
+        default=0.05, min=0.0, max=1.0,
+    )
+    invert: bpy.props.BoolProperty(
+        name="Invert",
+        description="Keep the key colour and drop everything else",
+        default=False,
+    )
+    render_method: bpy.props.EnumProperty(
+        name="Transparency",
+        items=[
+            ('DITHERED', "Dithered", "No sorting artefacts, best for cut-outs"),
+            ('BLENDED', "Blended", "Accurate see-through, can flicker when planes overlap"),
+        ],
+        default='DITHERED',
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'OBJECT' and context.selected_objects
+
+    def execute(self, context):
+        done = 0
+        seen = set()
+        for obj in context.selected_objects:
+            for slot in getattr(obj, "material_slots", []):
+                material = slot.material
+                if material is None or material.name in seen:
+                    continue
+                seen.add(material.name)
+                if hp_apply_colour_key(material, self.key_color, self.threshold,
+                                       self.softness, self.invert,
+                                       self.render_method):
+                    done += 1
+
+        if not done:
+            self.report({'WARNING'}, "No image texture found on the selection.")
+            return {'CANCELLED'}
+
+        self.report({'INFO'}, "Keyed %d material(s)." % done)
+        return {'FINISHED'}
+
+
 classes = (
     HP_OT_key_out_background,
     HP_OT_paste_image_plane,

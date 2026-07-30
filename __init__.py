@@ -38,7 +38,6 @@ def register():
     # Register your scripts
     HEAVYPOLY__menu_master.register()
     HEAVYPOLY_draw_primitives.register()
-    HEAVYPOLY_HOTKEYS.register()
     HEAVYPOLY_OPERATORS.register()
     HEAVYPOLY_panel_properties.register()
     HEAVYPOLY_panel_render.register()
@@ -61,6 +60,9 @@ def register():
     jmQuickPipe.register()
     HEAVYPOLY_pie_extra.register()
     HEAVYPOLY_setup.register()
+
+    # Last, so every operator exists by the time we set kmi properties.
+    HEAVYPOLY_HOTKEYS.register()
 
 
     # Register keyboard shortcuts

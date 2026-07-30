@@ -414,26 +414,58 @@ def disable_pie_kmi(km, menu_name, type, value, shift=False, ctrl=False,
 
 
 
-def Keymap_Heavypoly_TransformModal():
+def Keymap_Heavypoly_TransformModal(retries=20):
     """Space locks to Y while a transform is running.
 
-    Move / Rotate / Scale all share the Transform Modal Map, so one entry
-    covers all three. X and Z are Blender defaults and left alone.
+    Move / Rotate / Scale share the Transform Modal Map, so one entry covers
+    all three. X and Z are Blender defaults and left alone.
 
-    This used to live in the shipped userpref.blend rather than in code, so it
-    vanished the moment anyone reset their keymap.
+    Modal key-maps are rejected by the add-on keyconfig ("Modal key-maps not
+    supported for add-on key-config"), so repurpose the stock Space = Confirm
+    entry in the user keyconfig instead of adding a new one. Changing an
+    existing item rather than appending keeps this reversible.
     """
-    kc = bpy.context.window_manager.keyconfigs.addon
-    if kc is None:
+    kc = bpy.context.window_manager.keyconfigs.user
+    km = kc.keymaps.get('Transform Modal Map') if kc else None
+    if km is None:
+        if retries > 0:
+            bpy.app.timers.register(
+                lambda: Keymap_Heavypoly_TransformModal(retries - 1),
+                first_interval=0.2)
+        else:
+            print("[HEAVYPOLY] Transform Modal Map not found")
         return
-    try:
-        km = kc.keymaps.new(name='Transform Modal Map', space_type='EMPTY',
-                            region_type='WINDOW', modal=True)
-        km.keymap_items.new_modal('AXIS_Y', 'SPACE', 'PRESS')
-        print("[HEAVYPOLY] Space = Y axis lock registered")
-    except Exception as e:
-        print("[HEAVYPOLY] transform modal keymap failed: %r" % (e,))
 
+    for kmi in km.keymap_items:
+        if kmi.type != 'SPACE' or kmi.value != 'PRESS':
+            continue
+        if kmi.propvalue == 'AXIS_Y':
+            return          # already done
+        if kmi.propvalue == 'CONFIRM':
+            try:
+                kmi.propvalue = 'AXIS_Y'
+                kmi.active = True
+                print("[HEAVYPOLY] Space = Y axis lock registered")
+            except Exception as e:
+                print("[HEAVYPOLY] could not repurpose Space: %r" % (e,))
+            return
+
+    print("[HEAVYPOLY] no Space entry in Transform Modal Map to repurpose")
+
+
+def Keymap_Heavypoly_TransformModal_Restore():
+    """Put Space back to Confirm when the add-on is switched off."""
+    kc = bpy.context.window_manager.keyconfigs.user
+    km = kc.keymaps.get('Transform Modal Map') if kc else None
+    if km is None:
+        return
+    for kmi in km.keymap_items:
+        if kmi.type == 'SPACE' and kmi.propvalue == 'AXIS_Y':
+            try:
+                kmi.propvalue = 'CONFIRM'
+            except Exception:
+                pass
+            return
 
 
 def disable_modal_kmi(km, propvalue, type, value, retries=10):
@@ -603,7 +635,6 @@ def register():
     # E is HEAVYPOLY's Extrude to Cursor. Blender puts its own extrude on the
     # same key in the same keymap, so both fired and the new vertex followed
     # the mouse instead of staying put.
-    disable_modal_kmi('Transform Modal Map', 'CONFIRM', 'SPACE', 'PRESS')
     disable_specific_kmi('Mesh', 'view3d.edit_mesh_extrude_move_normal',
                          'E', 'PRESS', False, False, False)
     # Z is HEAVYPOLY's shading pie; Blender's own shading pie sits on the same
@@ -659,6 +690,7 @@ def register():
 
 
 def unregister():
+    Keymap_Heavypoly_TransformModal_Restore()
     # This used to call Keymap_Heavypoly() again, which registered a second
     # copy of every shortcut instead of removing the first.
     for km, kmi in reversed(addon_keymaps):

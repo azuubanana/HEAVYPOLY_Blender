@@ -35,42 +35,52 @@ from . import HEAVYPOLY_setup
 addon_keymaps = []
 
 def register():
-    # Register your scripts
-    HEAVYPOLY__menu_master.register()
-    HEAVYPOLY_draw_primitives.register()
-    HEAVYPOLY_OPERATORS.register()
-    HEAVYPOLY_panel_properties.register()
-    HEAVYPOLY_panel_render.register()
-    HEAVYPOLY_pie_add.register()
-    HEAVYPOLY_pie_areas.register()
-    HEAVYPOLY_pie_boolean.register()
-    HEAVYPOLY_pie_import_export.register()
-    HEAVYPOLY_pie_pivots.register()
-    HEAVYPOLY_pie_rotate_90.register()
-    HEAVYPOLY_pie_save.register()
-    HEAVYPOLY_pie_selection.register()
-    HEAVYPOLY_pie_shading.register()
-    HEAVYPOLY_pie_specials.register()
-    HEAVYPOLY_pie_symmetry.register()
-    HEAVYPOLY_pie_view.register()
-    HEAVYPOLY_popup_materials.register()
-    HEAVYPOLY_popup_properties.register()
-    HEAVYPOLY_popup_render.register()
-    HEAVYPOLY_select_through_border.register()
-    jmQuickPipe.register()
-    HEAVYPOLY_pie_extra.register()
-    HEAVYPOLY_setup.register()
+    # If any module raises part-way through, the classes registered so far
+    # stay in memory while Blender leaves the add-on switched off. Enabling
+    # it again then fails with "already registered as a subclass". Clean up
+    # instead, so a failed install leaves nothing behind.
+    try:
 
-    # Last, so every operator exists by the time we set kmi properties.
-    HEAVYPOLY_HOTKEYS.register()
+        # Register your scripts
+        HEAVYPOLY__menu_master.register()
+        HEAVYPOLY_draw_primitives.register()
+        HEAVYPOLY_OPERATORS.register()
+        HEAVYPOLY_panel_properties.register()
+        HEAVYPOLY_panel_render.register()
+        HEAVYPOLY_pie_add.register()
+        HEAVYPOLY_pie_areas.register()
+        HEAVYPOLY_pie_boolean.register()
+        HEAVYPOLY_pie_import_export.register()
+        HEAVYPOLY_pie_pivots.register()
+        HEAVYPOLY_pie_rotate_90.register()
+        HEAVYPOLY_pie_save.register()
+        HEAVYPOLY_pie_selection.register()
+        HEAVYPOLY_pie_shading.register()
+        HEAVYPOLY_pie_specials.register()
+        HEAVYPOLY_pie_symmetry.register()
+        HEAVYPOLY_pie_view.register()
+        HEAVYPOLY_popup_materials.register()
+        HEAVYPOLY_popup_properties.register()
+        HEAVYPOLY_popup_render.register()
+        HEAVYPOLY_select_through_border.register()
+        jmQuickPipe.register()
+        HEAVYPOLY_pie_extra.register()
+        HEAVYPOLY_setup.register()
+
+        # Last, so every operator exists by the time we set kmi properties.
+        HEAVYPOLY_HOTKEYS.register()
 
 
-    # Register keyboard shortcuts
-    wm = bpy.context.window_manager
-    km = wm.keyconfigs.addon.keymaps.new(name="3D View", space_type="VIEW_3D")
-    kmi = km.keymap_items.new("wm.call_menu", 'A', 'PRESS', ctrl=True, shift=True)
-    kmi.properties.name = "VIEW3D_MT_add"
-    addon_keymaps.append((km, kmi))
+        # Register keyboard shortcuts
+        wm = bpy.context.window_manager
+        km = wm.keyconfigs.addon.keymaps.new(name="3D View", space_type="VIEW_3D")
+        kmi = km.keymap_items.new("wm.call_menu", 'A', 'PRESS', ctrl=True, shift=True)
+        kmi.properties.name = "VIEW3D_MT_add"
+        addon_keymaps.append((km, kmi))
+    except Exception:
+        unregister()
+        raise
+
 
 def unregister():
     # One module raising here used to abort the whole teardown, leaving parts

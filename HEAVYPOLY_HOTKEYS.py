@@ -640,6 +640,14 @@ def register():
     # Z is HEAVYPOLY's shading pie; Blender's own shading pie sits on the same
     # key. Matched by menu name so we don't switch off our own.
     disable_pie_kmi('3D View', 'VIEW3D_MT_shading_pie', 'Z', 'PRESS')
+    # Ctrl+Shift+X is HEAVYPOLY's symmetry toggle. Blender puts the colour
+    # sampler on the same key in every paint mode, and that fired first, which
+    # is why symmetry only worked in Edit Mode.
+    for _paint_km in ('Sculpt', 'Vertex Paint', 'Image Paint'):
+        disable_specific_kmi(_paint_km, 'paint.sample_color',
+                             'X', 'PRESS', True, True, False)
+    disable_specific_kmi('Weight Paint', 'paint.weight_sample_group',
+                         'X', 'PRESS', True, True, False)
 
     disable_specific_kmi('Sculpt', 'paint.brush_select','V','PRESS',False,False,False)
     

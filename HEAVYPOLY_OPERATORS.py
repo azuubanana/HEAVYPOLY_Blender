@@ -655,14 +655,21 @@ class HP_OT_toggle_symmetry(bpy.types.Operator):
     )
 
     def _candidates(self, context, axis):
-        """Where the flag lives, per mode, most specific first.
+        """Where the flag lives, most likely first.
 
-        Falling through to the mesh in sculpt mode was wrong: it flipped the
-        Edit Mode mirror and reported success while the sculpt panel stayed put.
+        Blender 5.x drives the sculpt Symmetry panel from the mesh's own
+        use_mirror_* flags. tool_settings.sculpt.use_symmetry_* still exists but
+        no longer does anything, so checking it first meant reporting success
+        while the panel never moved. Mesh first, paint structs as a fallback for
+        object types that have no mesh.
         """
         tool_settings = context.scene.tool_settings
         mode = context.mode
         mesh = context.object.data if context.object else None
+
+        if mesh is not None:
+            yield mesh, "use_mirror_" + axis
+            yield mesh, "use_symmetry_" + axis
 
         paint = None
         if mode == 'SCULPT':
@@ -678,19 +685,9 @@ class HP_OT_toggle_symmetry(bpy.types.Operator):
             for name in ("use_symmetry_" + axis, "symmetry_" + axis,
                          "use_mirror_" + axis):
                 yield paint, name
-            # 5.x moved some of these onto the shared unified settings.
             unified = getattr(paint, "unified_paint_settings", None)
             if unified is not None:
                 yield unified, "use_symmetry_" + axis
-
-        # Sculpt symmetry became a mesh property in some versions.
-        if mesh is not None and mode in {'SCULPT', 'PAINT_VERTEX',
-                                        'PAINT_WEIGHT', 'PAINT_TEXTURE'}:
-            for name in ("use_mirror_" + axis, "use_symmetry_" + axis):
-                yield mesh, name
-
-        if mode == 'EDIT_MESH' and mesh is not None:
-            yield mesh, "use_mirror_" + axis
 
     def _report_options(self, context):
         """Print what actually exists, so a failure is diagnosable."""

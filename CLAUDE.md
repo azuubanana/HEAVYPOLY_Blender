@@ -232,6 +232,9 @@ English so that tutorials and error messages are searchable.
   Separate Islands checkbox in the redo panel splits pieces with per-piece
   origins. Cut Out cannot run on an already-separated piece — it always
   rebuilds from the whole image; that is why the option lives inside it.
+  1.26.0: rim tightening — inside corners within 0.35 cells snap to the
+  outline too, and rim edges get a subdivided midpoint pulled onto the
+  outline (rim cells become 5-gons, interior stays pure quads).
 - **N-panel tab.** Confirmed working (1.20.x): `HP Tools` sidebar tab
   (`HEAVYPOLY_panel_tools.py`). 1.21.0 added `Separate Islands` and
   `Copy Diagnostic Report` (runs HP_Check, clipboard) plus a What's New

@@ -1402,15 +1402,38 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
                     "higher means fewer vertices",
         default=1.0, min=0.0, max=64.0,
     )
+    inset: bpy.props.FloatProperty(
+        name="Inset",
+        description="Shrink the outline inward by this many pixels, hiding "
+                    "the semi-transparent fringe at the edge",
+        default=0.0, min=0.0, max=64.0,
+    )
     ignore_inner: bpy.props.BoolProperty(
         name="Ignore Inner",
         description="Skip holes inside the outline",
         default=False,
     )
-    # Original flat bounds of the mesh, captured on invoke so that dragging
-    # the redo sliders keeps mapping onto the same rectangle even though the
-    # mesh itself has already been replaced.
+    origin: bpy.props.EnumProperty(
+        name="Origin",
+        description="Where to put the object origin after cutting",
+        items=[
+            ('KEEP', "Keep", "Leave the origin where it is"),
+            ('CENTER', "Center", "Middle of the cut-out"),
+            ('BOTTOM', "Bottom",
+             "Bottom middle - handy for plants and standees"),
+        ],
+        default='KEEP',
+    )
+    thickness: bpy.props.FloatProperty(
+        name="Thickness",
+        description="Add a Solidify modifier with this thickness; 0 removes it",
+        default=0.0, min=0.0, max=10.0, subtype='DISTANCE',
+    )
+    # Original flat bounds and location of the mesh, captured on invoke so
+    # that dragging the redo sliders keeps mapping onto the same rectangle
+    # even though the mesh itself has already been replaced.
     rect: bpy.props.FloatVectorProperty(size=4, options={'HIDDEN', 'SKIP_SAVE'})
+    orig_location: bpy.props.FloatVectorProperty(size=3, options={'HIDDEN', 'SKIP_SAVE'})
     rect_valid: bpy.props.BoolProperty(default=False, options={'HIDDEN', 'SKIP_SAVE'})
 
     @classmethod
@@ -1430,7 +1453,12 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         layout.separator()
         column = layout.column()
         column.prop(self, "pixel_error")
+        column.prop(self, "inset")
         column.prop(self, "ignore_inner")
+        layout.separator()
+        column = layout.column()
+        column.prop(self, "origin")
+        column.prop(self, "thickness")
 
     @staticmethod
     def _mesh_rect(obj):
@@ -1444,6 +1472,7 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
     def invoke(self, context, event):
         obj = context.active_object
         self.rect = self._mesh_rect(obj)
+        self.orig_location = obj.location[:]
         self.rect_valid = True
 
         # Clipboard images are usually opaque, so alpha would select the
@@ -1510,6 +1539,16 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
                                      "or check the Channel setting.")
             return {'CANCELLED'}
 
+        # Inset: erode the mask so the outline sits inside the fringe.
+        for _ in range(int(round(self.inset))):
+            padded = np.pad(binary, 1, mode='constant', constant_values=False)
+            binary = (padded[:-2, :-2] & padded[:-2, 1:-1] & padded[:-2, 2:]
+                      & padded[1:-1, :-2] & padded[1:-1, 1:-1] & padded[1:-1, 2:]
+                      & padded[2:, :-2] & padded[2:, 1:-1] & padded[2:, 2:])
+        if not binary.any():
+            self.report({'WARNING'}, "Inset removed everything - lower it.")
+            return {'CANCELLED'}
+
         loops = hp_trace_mask_loops(binary)
         if not loops:
             self.report({'WARNING'}, "Could not trace an outline.")
@@ -1534,14 +1573,19 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
 
         if not self.rect_valid:
             self.rect = self._mesh_rect(obj)
+            self.orig_location = obj.location[:]
             self.rect_valid = True
         x0, x1, y0, y1 = self.rect
 
         bm = bmesh.new()
+        uv_of = {}   # UVs come from the pixel grid, recorded at creation
         for points in kept:
-            verts = [bm.verts.new((x0 + (px / width) * (x1 - x0),
-                                   y0 + (py / height) * (y1 - y0), 0.0))
-                     for px, py in points]
+            verts = []
+            for px, py in points:
+                vert = bm.verts.new((x0 + (px / width) * (x1 - x0),
+                                     y0 + (py / height) * (y1 - y0), 0.0))
+                uv_of[vert] = (px / width, py / height)
+                verts.append(vert)
             for i in range(len(verts)):
                 bm.edges.new((verts[i], verts[(i + 1) % len(verts)]))
 
@@ -1558,28 +1602,94 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         if sum(face.normal.z for face in bm.faces) < 0.0:
             bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
 
-        # Rebuild UVs from the pixel grid so the texture lands exactly where
-        # it was on the uncut plane.
-        uv_layer = bm.loops.layers.uv.new("UVMap")
         span_x = (x1 - x0) or 1.0
         span_y = (y1 - y0) or 1.0
+        uv_layer = bm.loops.layers.uv.new("UVMap")
         for face in bm.faces:
             for face_loop in face.loops:
-                co = face_loop.vert.co
-                face_loop[uv_layer].uv = ((co.x - x0) / span_x,
-                                          (co.y - y0) / span_y)
+                uv = uv_of.get(face_loop.vert)
+                if uv is None:   # a vert the fill created; map from position
+                    co = face_loop.vert.co
+                    uv = ((co.x - x0) / span_x, (co.y - y0) / span_y)
+                face_loop[uv_layer].uv = uv
+
+        # Origin: shift the geometry and move the object the opposite way,
+        # so nothing appears to move in the viewport. Absolute, not
+        # incremental - orig_location was captured on invoke, so dragging
+        # the redo sliders cannot make the object creep.
+        pivot = None
+        if self.origin != 'KEEP':
+            xs = [v.co.x for v in bm.verts]
+            ys = [v.co.y for v in bm.verts]
+            if self.origin == 'BOTTOM':
+                pivot = Vector(((min(xs) + max(xs)) / 2.0, min(ys), 0.0))
+            else:
+                pivot = Vector(((min(xs) + max(xs)) / 2.0,
+                                (min(ys) + max(ys)) / 2.0, 0.0))
+            for vert in bm.verts:
+                vert.co -= pivot
 
         bm.to_mesh(obj.data)
         bm.free()
         obj.data.update()
+
+        if pivot is not None:
+            obj.location = (Vector(self.orig_location)
+                            + obj.matrix_world.to_3x3() @ pivot)
+        else:
+            obj.location = self.orig_location
+
+        # Thickness: one Solidify modifier of our own, updated in place so
+        # slider drags never stack copies.
+        modifier = obj.modifiers.get("HP_Cutout_Solidify")
+        if self.thickness > 0.0:
+            if modifier is None or modifier.type != 'SOLIDIFY':
+                modifier = obj.modifiers.new("HP_Cutout_Solidify", 'SOLIDIFY')
+            modifier.thickness = self.thickness
+            modifier.offset = 0.0
+            modifier.use_even_offset = True
+        elif modifier is not None:
+            obj.modifiers.remove(modifier)
 
         self.report({'INFO'}, "Cut out %d island(s), %d hole(s), %d verts."
                     % (islands, holes, len(obj.data.vertices)))
         return {'FINISHED'}
 
 
+class HP_OT_separate_islands(bpy.types.Operator):
+    """Split the active mesh into one object per connected piece"""
+    bl_idname = "object.hp_separate_islands"
+    bl_label = "Separate Islands"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return context.mode == 'OBJECT' and obj is not None and obj.type == 'MESH'
+
+    def execute(self, context):
+        before = len(context.scene.objects)
+        bpy.ops.object.mode_set(mode='EDIT')
+        try:
+            bpy.ops.mesh.separate(type='LOOSE')
+        except Exception as e:
+            print("[HEAVYPOLY] separate failed: %r" % (e,))
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        made = len(context.scene.objects) - before
+        if made == 0:
+            self.report({'INFO'}, "Only one piece - nothing to separate.")
+            return {'FINISHED'}
+
+        # Give every piece its own origin so they move independently.
+        bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='MEDIAN')
+        self.report({'INFO'}, "Separated into %d objects." % (made + 1))
+        return {'FINISHED'}
+
+
 classes = (
     HP_OT_cutout_mesh,
+    HP_OT_separate_islands,
     HP_OT_key_out_background,
     HP_OT_paste_image_plane,
     HP_OT_toggle_symmetry,

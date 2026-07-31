@@ -30,6 +30,15 @@ class HP_PT_tools(bpy.types.Panel):
                         text="Key Out Background", icon='IMAGE_ALPHA')
         column.operator("object.hp_cutout_mesh",
                         text="Cut Out to Mesh", icon='MESH_DATA')
+        column.operator("object.hp_separate_islands",
+                        text="Separate Islands", icon='MOD_EXPLODE')
+
+        layout.separator()
+        column = layout.column(align=True)
+        column.scale_y = 1.5
+        column.label(text="Support", icon='QUESTION')
+        column.operator("hp.copy_diagnostic",
+                        text="Copy Diagnostic Report", icon='COPYDOWN')
 
 
 classes = (

@@ -198,17 +198,23 @@ English so that tutorials and error messages are searchable.
   students are on macOS and historically that is where HEAVYPOLY broke.
 - **macOS keymap adaptation.** Cmd (`oskey`) instead of Ctrl where it makes
   sense. Blanket replacement is unsafe — `Ctrl+S` and friends would collide.
-  Needs a list of the chords that actually hurt on a Mac.
-- **Cut-out meshes — verify.** Shipped in 1.20.0 as `Cut Out to Mesh`
-  (`object.hp_cutout_mesh`): contour tracing (marching-squares-style boundary
-  walk, Douglas-Peucker simplify, `triangle_fill`), not the grid approximation
-  originally planned — Azusa asked for the Leafig-style result. Written from
-  scratch; the Leafig zip was deliberately never opened (paid add-on, GPL).
-  The pure-python tracing helpers have offline tests; the Blender side
-  (invoke auto-detection, fill, UVs) is unverified.
-- **N-panel tab — verify.** Shipped in 1.20.0 as the `HP Tools` sidebar tab
-  (`HEAVYPOLY_panel_tools.py`) holding `Paste Image as Plane`,
-  `Key Out Background` and `Cut Out to Mesh`. Not yet confirmed in Blender.
+  Needs a list of the chords that actually hurt on a Mac. **On hold by
+  Azusa's request (July 2026): she wants to work through it together when
+  she has time, since it needs her Mac for testing. Don't start it solo.**
+- **Cut-out meshes.** Confirmed working by Azusa (1.20.x). Shipped as
+  `Cut Out to Mesh` (`object.hp_cutout_mesh`): contour tracing, not the grid
+  approximation originally planned — Azusa asked for the Leafig-style result.
+  Written from scratch; the Leafig zip was deliberately never opened (paid
+  add-on, GPL). 1.21.0 added Inset (mask erosion), Origin (Keep/Center/
+  Bottom), Thickness (managed Solidify) and `Separate Islands` — those still
+  need verifying.
+- **N-panel tab.** Confirmed working (1.20.x): `HP Tools` sidebar tab
+  (`HEAVYPOLY_panel_tools.py`). 1.21.0 added `Separate Islands` and
+  `Copy Diagnostic Report` (runs HP_Check, clipboard) plus a What's New
+  popup after updates — those still need verifying.
+- **Tab conflict — verify.** The 1.20.0 idname-match disable did nothing on
+  Azusa's machine; 1.20.1 switched to `disable_stock_tab()` (match by key,
+  both keyconfigs, logs what it found). Awaiting her confirmation.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

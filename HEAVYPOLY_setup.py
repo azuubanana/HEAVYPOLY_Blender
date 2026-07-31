@@ -277,6 +277,41 @@ def _install_startup_file(report=None):
         return False
 
 
+# ---------------------------------------------------------------- what's new
+
+# Newest first. Shown once after an update. Keep the lines short - the
+# popup does not wrap text. English only, per "No Japanese in the UI".
+WHATS_NEW = (
+    ("1.21.0", (
+        "N panel > HP Tools: Copy Diagnostic Report. One click,",
+        "then paste it to your teacher when something is wrong.",
+        "Cut Out to Mesh: Inset, Origin and Thickness options,",
+        "plus a Separate Islands button.",
+        "This What's New popup.",
+    )),
+    ("1.20.0", (
+        "HP Tools tab in the 3D View sidebar (press N).",
+        "Cut Out to Mesh: trim a pasted image plane to its outline.",
+        "Tab toggles subdivision on the first press.",
+        "Apply Preferences now also turns on Node Wrangler.",
+    )),
+)
+
+
+def _version_tuple(version):
+    try:
+        return tuple(int(part) for part in version.split("."))
+    except Exception:
+        return (0,)
+
+
+def _whats_new_entries(prefs):
+    """Changelog entries newer than what the user last saw."""
+    baseline = _version_tuple(prefs.seen_version or prefs.applied_version or "0")
+    return [(v, lines) for v, lines in WHATS_NEW
+            if _version_tuple(v) > baseline]
+
+
 # ---------------------------------------------------------------- operators
 
 
@@ -713,6 +748,94 @@ class HP_OT_setup_restore(Operator):
 # ---------------------------------------------------------------- preferences
 
 
+class HP_OT_copy_diagnostic(Operator):
+    """Run the HP_Check diagnostic and copy the report to the clipboard"""
+    bl_idname = "hp.copy_diagnostic"
+    bl_label = "Copy Diagnostic Report"
+
+    def execute(self, context):
+        path = os.path.join(_package_dir(), "HP_Check.py")
+        if not os.path.exists(path):
+            self.report({'ERROR'}, "HP_Check.py is missing from the add-on.")
+            return {'CANCELLED'}
+        # HP_Check is written to run from the Text Editor; executing it here
+        # builds the same module-level `report` string, which is all we need.
+        namespace = {"__name__": "HP_Check", "__file__": path}
+        try:
+            source = open(path, encoding="utf-8").read()
+            exec(compile(source, path, "exec"), namespace)
+        except Exception as e:
+            self.report({'ERROR'}, "Diagnostic failed: %r" % (e,))
+            print("[HEAVYPOLY] HP_Check failed: %r" % (e,))
+            return {'CANCELLED'}
+        report = namespace.get("report") or "\n".join(namespace.get("lines", []))
+        if not report:
+            self.report({'ERROR'}, "Diagnostic produced no output.")
+            return {'CANCELLED'}
+        context.window_manager.clipboard = report
+        self.report({'INFO'},
+                    "Report copied - paste it to your teacher (Ctrl+V).")
+        return {'FINISHED'}
+
+
+class HP_OT_setup_whats_new(Operator):
+    """What changed in recent HEAVYPOLY updates"""
+    bl_idname = "hp.setup_whats_new"
+    bl_label = "HEAVYPOLY - What's New"
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=440)
+
+    def draw(self, context):
+        col = self.layout.column()
+        prefs = _prefs()
+        entries = _whats_new_entries(prefs) if prefs else []
+        if not entries:
+            entries = list(WHATS_NEW[:1])   # opened by hand: show the latest
+        for version, lines in entries:
+            col.label(text="Version %s" % version, icon='INFO')
+            for line in lines:
+                col.label(text="      " + line)
+            col.separator()
+        col.label(text="Keymap and preference changes need Apply All.",
+                  icon='ERROR')
+
+    def execute(self, context):
+        prefs = _prefs()
+        if prefs:
+            prefs.seen_version = _addon_version()
+            try:
+                bpy.ops.wm.save_userpref()
+            except Exception as e:
+                print("[HEAVYPOLY] could not save preferences: %r" % (e,))
+        return {'FINISHED'}
+
+
+def _whats_new_popup():
+    """Show the changelog once after an update. Runs from a timer.
+
+    Closing the popup with OK records the version; clicking it away does
+    not, so it reappears on the next start. That is deliberate.
+    """
+    prefs = _prefs()
+    if prefs is None:
+        return 0.5   # preferences not registered yet, try again shortly
+    if not prefs.applied_version:
+        return None  # brand-new install; the first-run dialog covers it
+    current = _addon_version()
+    if (_version_tuple(prefs.seen_version or prefs.applied_version)
+            >= _version_tuple(current)):
+        return None
+    if not _whats_new_entries(prefs):
+        prefs.seen_version = current   # nothing listed for this jump
+        return None
+    try:
+        bpy.ops.hp.setup_whats_new('INVOKE_DEFAULT')
+    except Exception as e:
+        print("[HEAVYPOLY] what's new popup failed: %r" % (e,))
+    return None
+
+
 def _first_run_setup():
     """Set everything up the first time the add-on is enabled.
 
@@ -748,6 +871,10 @@ class HEAVYPOLY_Preferences(AddonPreferences):
     applied_startup: BoolProperty(default=False)
     applied_workspaces: BoolProperty(default=False)
     applied_version: StringProperty(default="")
+    # Last version whose What's New popup was dismissed with OK. Kept apart
+    # from applied_version, which tracks the setup state - closing the popup
+    # must not silence the "Apply All to get the new keymap" banner.
+    seen_version: StringProperty(default="")
 
     def draw(self, context):
         layout = self.layout
@@ -770,6 +897,7 @@ class HEAVYPOLY_Preferences(AddonPreferences):
             col.label(text="Apply All to get the new startup file.")
             col.label(text="Save your keymap first if you changed any shortcuts.")
             col.operator("hp.setup_save_keymap", icon='FILE_TICK')
+            col.operator("hp.setup_whats_new", text="What's New", icon='INFO')
         else:
             box.label(text="Applied  (%s)" % (current or "?"), icon='CHECKMARK')
 
@@ -808,6 +936,8 @@ class HEAVYPOLY_Preferences(AddonPreferences):
         if self.show_trouble:
             box = layout.box()
             col = box.column(align=True)
+            col.operator("hp.copy_diagnostic", icon='COPYDOWN')
+            col.separator()
             row = col.row(align=True)
             row.operator("hp.setup_save_keymap", icon='FILE_TICK')
             row.operator("hp.setup_load_keymap", icon='FILE_REFRESH')
@@ -844,6 +974,8 @@ classes = (
     HP_OT_setup_load_autosave,
     HP_OT_setup_open_config,
     HP_OT_setup_restore,
+    HP_OT_copy_diagnostic,
+    HP_OT_setup_whats_new,
     HEAVYPOLY_Preferences,
 )
 
@@ -852,11 +984,13 @@ _register_classes, _unregister_classes = bpy.utils.register_classes_factory(clas
 
 def register():
     _register_classes()
-    # Blender is still booting when add-ons register, so defer the dialog.
+    # Blender is still booting when add-ons register, so defer the dialogs.
     bpy.app.timers.register(_first_run_setup, first_interval=1.0)
+    bpy.app.timers.register(_whats_new_popup, first_interval=2.0)
 
 
 def unregister():
-    if bpy.app.timers.is_registered(_first_run_setup):
-        bpy.app.timers.unregister(_first_run_setup)
+    for timer in (_first_run_setup, _whats_new_popup):
+        if bpy.app.timers.is_registered(timer):
+            bpy.app.timers.unregister(timer)
     _unregister_classes()

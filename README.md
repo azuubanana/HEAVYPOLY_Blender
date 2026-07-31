@@ -52,7 +52,7 @@ the HP Modeling workspace.
 
 Drag this zip onto the Blender window / このzipを Blender のウィンドウにドラッグ:
 
-**https://azuubanana.github.io/HEAVYPOLY_Blender/heavypoly-1.20.1.zip**
+**https://azuubanana.github.io/HEAVYPOLY_Blender/heavypoly-1.21.0.zip**
 
 > ⚠️ **Do not use the green Code > Download ZIP button.** It wraps everything in
 > an extra folder and Blender won't recognise it.
@@ -123,6 +123,20 @@ Startup File** — that overwrites ours, which is fine.
 ---
 
 ## When something doesn't work / うまくいかないとき
+
+**The quick way:** press **N** in the 3D View, open the **HP Tools** tab, and
+click **Copy Diagnostic Report**. The report is now on your clipboard — paste
+it (Ctrl+V) into a message to your teacher. Done.
+
+**いちばん簡単な方法：** 3Dビューで **N** キー → **HP Tools** タブ →
+**Copy Diagnostic Report** をクリック。レポートがコピーされるので、そのまま
+講師へのメッセージに貼り付け（Ctrl+V）てください。
+
+If the HP Tools tab itself is missing (the add-on failed to load), use the
+manual way below.
+
+HP Tools タブ自体が出ていない（アドオンが読み込めていない）場合は、以下の
+手動の方法を使ってください。
 
 `HP_Check.py` ships inside the add-on and reports what is and isn't working. It
 only reads — it changes nothing.

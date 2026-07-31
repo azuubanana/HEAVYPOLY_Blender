@@ -226,9 +226,11 @@ English so that tutorials and error messages are searchable.
   (`HEAVYPOLY_panel_tools.py`). 1.21.0 added `Separate Islands` and
   `Copy Diagnostic Report` (runs HP_Check, clipboard) plus a What's New
   popup after updates — those still need verifying.
-- **Tab conflict — verify.** The 1.20.0 idname-match disable did nothing on
-  Azusa's machine; 1.20.1 switched to `disable_stock_tab()` (match by key,
-  both keyconfigs, logs what it found). Awaiting her confirmation.
+- **Tab conflict — fixed, confirmed.** The 1.20.0 idname-match disable did
+  nothing on Azusa's machine; 1.20.1's `disable_stock_tab()` (match by key,
+  both keyconfigs) works — she confirmed Tab toggles subdiv on the first
+  press. Side effect: the disable reads as a user edit, see
+  `INTENTIONAL_DISABLES` in `HEAVYPOLY_setup.py`.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

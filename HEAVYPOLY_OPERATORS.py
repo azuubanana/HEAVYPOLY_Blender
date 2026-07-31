@@ -1407,6 +1407,16 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         description="Shrink the outline inward by this many pixels, hiding "
                     "the semi-transparent fringe at the edge",
         default=0.0, min=0.0, max=64.0,
+        # Deliberately forgotten between runs. A remembered inset silently
+        # ate the thin stems of the next image - erosion damage looks like
+        # a broken tracer, not like a leftover setting.
+        options={'SKIP_SAVE'},
+    )
+    min_size: bpy.props.FloatProperty(
+        name="Min Size",
+        description="Fill holes and drop specks smaller than this many "
+                    "pixels across",
+        default=4.0, min=0.0, max=256.0,
     )
     ignore_inner: bpy.props.BoolProperty(
         name="Ignore Inner",
@@ -1454,6 +1464,7 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         column = layout.column()
         column.prop(self, "pixel_error")
         column.prop(self, "inset")
+        column.prop(self, "min_size")
         column.prop(self, "ignore_inner")
         layout.separator()
         column = layout.column()
@@ -1469,22 +1480,105 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
             return (-0.5, 0.5, -0.5, 0.5)
         return (min(xs), max(xs), min(ys), max(ys))
 
+    @staticmethod
+    def _read_pixels(image, np):
+        width, height = image.size
+        channels = image.channels
+        pixels = np.empty(width * height * channels, dtype=np.float32)
+        image.pixels.foreach_get(pixels)
+        return pixels.reshape(height, width, channels), channels
+
+    def _build_mask(self, px, channels, np):
+        """Foreground weight per pixel, 0..1. None if it cannot be built."""
+        if self.channel == 'ALPHA':
+            return px[:, :, 3].copy() if channels >= 4 else None
+        if channels >= 3:
+            rgb = px[:, :, :3]
+        else:
+            rgb = np.repeat(px[:, :, :1], 3, axis=2)
+        background = np.array(self.background[:], dtype=np.float32)
+        mask = np.sqrt(((rgb - background) ** 2).sum(axis=2)) / 1.7320508
+        if channels >= 4:
+            mask = mask * px[:, :, 3]   # transparent is background too
+        return mask
+
+    @staticmethod
+    def _border_colour(px, channels, np):
+        """Median colour of the image's outer ring - the likely background."""
+        if channels < 3:
+            return None
+        border = np.concatenate((px[0, :, :3], px[-1, :, :3],
+                                 px[:, 0, :3], px[:, -1, :3]))
+        return tuple(float(v) for v in np.median(border, axis=0))
+
+    @staticmethod
+    def _otsu(mask, np):
+        """Threshold that best splits the mask into two groups.
+
+        A fixed 0.5 was a trap: pastel colours sit around 0.45 distance
+        from white on this scale, so leaves came out riddled with holes
+        while saturated shapes cut cleanly.
+        """
+        hist, _ = np.histogram(mask, bins=64, range=(0.0, 1.0))
+        total = int(hist.sum())
+        if total == 0:
+            return None
+        centers = (np.arange(64) + 0.5) / 64.0
+        w0 = np.cumsum(hist)
+        w1 = total - w0
+        sum0 = np.cumsum(hist * centers)
+        sum_all = float((hist * centers).sum())
+        valid = (w0 > 0) & (w1 > 0)
+        if not valid.any():
+            return None
+        mean0 = sum0 / np.maximum(w0, 1)
+        mean1 = (sum_all - sum0) / np.maximum(w1, 1)
+        between = w0 * w1 * (mean0 - mean1) ** 2
+        between[~valid] = -1.0
+        # Cleanly separated masks make a flat plateau of best splits;
+        # argmax alone would take its left edge, hugging the background.
+        # The middle of the plateau is the robust choice.
+        best = float(between.max())
+        plateau = np.nonzero(between >= best - abs(best) * 1e-9)[0]
+        threshold = float(centers[int((plateau[0] + plateau[-1]) // 2)])
+        return min(max(threshold, 0.1), 0.7)
+
     def invoke(self, context, event):
         obj = context.active_object
         self.rect = self._mesh_rect(obj)
         self.orig_location = obj.location[:]
         self.rect_valid = True
 
+        try:
+            import numpy as np
+        except ImportError:
+            np = None
+
         # Clipboard images are usually opaque, so alpha would select the
-        # whole plane. Fall back to colour keying, and reuse the colour
-        # Key Out Background picked, if it ran on this object already.
+        # whole plane. Fall back to colour keying: reuse the colour Key Out
+        # Background picked if it ran on this object, otherwise guess the
+        # background from the image border. Then let Otsu pick the cutoff -
+        # a per-image threshold instead of a one-size-fits-none 0.5.
         image = hp_find_object_image(obj)
-        if image is not None and not (image.channels >= 4
-                                      and hp_image_has_transparency(image)):
-            self.channel = 'DISTANCE'
-            key_colour = hp_find_key_colour(obj)
-            if key_colour is not None:
-                self.background = key_colour
+        if image is not None and np is not None and min(image.size) >= 2:
+            px, channels = self._read_pixels(image, np)
+            if channels >= 4 and hp_image_has_transparency(image):
+                self.channel = 'ALPHA'
+            else:
+                self.channel = 'DISTANCE'
+                key_colour = hp_find_key_colour(obj)
+                if key_colour is not None:
+                    self.background = key_colour
+                else:
+                    guess = self._border_colour(px, channels, np)
+                    if guess is not None:
+                        self.background = guess
+            mask = self._build_mask(px, channels, np)
+            if mask is not None:
+                cutoff = self._otsu(mask, np)
+                if cutoff is not None:
+                    self.cutoff = cutoff
+                    print("[HEAVYPOLY] cutout auto cutoff %.2f" % cutoff)
         return self.execute(context)
 
     def execute(self, context):
@@ -1511,21 +1605,12 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
                         "Image has no alpha channel - switch Channel to Key Colour.")
             return {'CANCELLED'}
 
-        pixels = np.empty(width * height * channels, dtype=np.float32)
-        image.pixels.foreach_get(pixels)
-        pixels = pixels.reshape(height, width, channels)
-
-        if self.channel == 'ALPHA':
-            mask = pixels[:, :, 3].copy()
-        else:
-            if channels >= 3:
-                rgb = pixels[:, :, :3]
-            else:
-                rgb = np.repeat(pixels[:, :, :1], 3, axis=2)
-            background = np.array(self.background[:], dtype=np.float32)
-            mask = np.sqrt(((rgb - background) ** 2).sum(axis=2)) / 1.7320508
-            if channels >= 4:
-                mask = mask * pixels[:, :, 3]   # transparent is background too
+        pixels, channels = self._read_pixels(image, np)
+        mask = self._build_mask(pixels, channels, np)
+        if mask is None:
+            self.report({'WARNING'},
+                        "Image has no alpha channel - switch Channel to Key Colour.")
+            return {'CANCELLED'}
 
         for _ in range(self.smoothing):
             padded = np.pad(mask, 1, mode='edge')
@@ -1556,8 +1641,12 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
 
         islands = holes = 0
         kept = []
+        min_area = self.min_size * self.min_size
         for loop in loops:
-            if _hp_loop_area(loop) > 0.0:
+            area = _hp_loop_area(loop)
+            if abs(area) < min_area:
+                continue   # speck island or pinhole: not worth geometry
+            if area > 0.0:
                 islands += 1
             else:
                 if self.ignore_inner:
@@ -1622,7 +1711,13 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
             xs = [v.co.x for v in bm.verts]
             ys = [v.co.y for v in bm.verts]
             if self.origin == 'BOTTOM':
-                pivot = Vector(((min(xs) + max(xs)) / 2.0, min(ys), 0.0))
+                # Where the mesh actually touches the bottom, not the middle
+                # of the bounding box - a curved stem would otherwise leave
+                # the origin floating in the air beside it.
+                min_y = min(ys)
+                band = (max(ys) - min_y) * 0.02 + 1e-6
+                low_xs = [v.co.x for v in bm.verts if v.co.y <= min_y + band]
+                pivot = Vector((sum(low_xs) / len(low_xs), min_y, 0.0))
             else:
                 pivot = Vector(((min(xs) + max(xs)) / 2.0,
                                 (min(ys) + max(ys)) / 2.0, 0.0))
@@ -1691,10 +1786,19 @@ class HP_OT_separate_islands(bpy.types.Operator):
         xs = [c.x for c in coords]
         ys = [c.y for c in coords]
         zs = [c.z for c in coords]
-        target = Vector(((min(xs) + max(xs)) / 2.0,
-                         (min(ys) + max(ys)) / 2.0,
-                         min(zs) if mode == 'BOTTOM'
-                         else (min(zs) + max(zs)) / 2.0))
+        if mode == 'BOTTOM':
+            # Under the lowest bit of geometry, not the bounding-box middle
+            # - a curved stem should get its origin at the stem tip.
+            min_z = min(zs)
+            band = (max(zs) - min_z) * 0.02 + 1e-6
+            low = [c for c in coords if c.z <= min_z + band]
+            target = Vector((sum(c.x for c in low) / len(low),
+                             sum(c.y for c in low) / len(low),
+                             min_z))
+        else:
+            target = Vector(((min(xs) + max(xs)) / 2.0,
+                             (min(ys) + max(ys)) / 2.0,
+                             (min(zs) + max(zs)) / 2.0))
         local = matrix.inverted() @ target
         piece.data.transform(Matrix.Translation(-local))
         piece.matrix_world = matrix @ Matrix.Translation(local)

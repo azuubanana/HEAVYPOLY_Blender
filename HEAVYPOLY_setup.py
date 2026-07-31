@@ -94,10 +94,15 @@ INTENTIONAL_DISABLES = (
 
 
 def _is_intentional_disable(km, kmi):
-    if kmi.active:
-        return False
-    return any(km.name == name and kmi.type == key
-               for name, key in INTENTIONAL_DISABLES)
+    if not kmi.active and any(km.name == name and kmi.type == key
+                              for name, key in INTENTIONAL_DISABLES):
+        return True
+    # Space repurposed from Confirm to Y-axis lock in the Transform Modal
+    # Map (see Keymap_Heavypoly_TransformModal) - ours too, not the user's.
+    if (km.name == 'Transform Modal Map' and kmi.type == 'SPACE'
+            and getattr(kmi, 'propvalue', '') == 'AXIS_Y'):
+        return True
+    return False
 
 
 def _modified_keymap_count():
@@ -298,6 +303,14 @@ def _install_startup_file(report=None):
 # Newest first. Shown once after an update. Keep the lines short - the
 # popup does not wrap text. English only, per "No Japanese in the UI".
 WHATS_NEW = (
+    ("1.23.0", (
+        "Cut Out to Mesh picks its cutoff per image now, guesses",
+        "the background colour from the image border, and fills",
+        "specks and pinholes (Min Size). Inset resets each run.",
+        "Bottom origin goes under the lowest geometry, not the",
+        "middle of the bounding box (cutout and Separate Islands).",
+        "This popup waits until after Apply All opens the new file.",
+    )),
     ("1.22.0", (
         "Separate Islands: each piece's origin now goes to its",
         "bottom center by default (change it in the redo panel).",
@@ -851,6 +864,11 @@ def _whats_new_popup():
     if (_version_tuple(prefs.seen_version or prefs.applied_version)
             >= _version_tuple(current)):
         return None
+    if prefs.applied_version != current:
+        # An update is pending. Showing the popup now buries it under the
+        # Preferences window and the first click kills it - wait until
+        # Apply All has run and the new file is open, then show it.
+        return 5.0
     if not _whats_new_entries(prefs):
         prefs.seen_version = current   # nothing listed for this jump
         return None

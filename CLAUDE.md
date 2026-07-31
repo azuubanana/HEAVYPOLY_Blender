@@ -235,6 +235,15 @@ English so that tutorials and error messages are searchable.
   1.26.0: rim tightening — inside corners within 0.35 cells snap to the
   outline too, and rim edges get a subdivided midpoint pulled onto the
   outline (rim cells become 5-gons, interior stays pure quads).
+  1.27.0: snapping debris (stacked verts, slivers, crossed bow-tie faces
+  that rendered as flipped normals) is welded/culled automatically, and a
+  Show Wireframe option turns on the object's wire display for tuning.
+
+**Backspace-to-reset does not work in redo panels.** Azusa hit this tuning
+the cut-out: hovering a value in the F9 panel and pressing Backspace does
+nothing. Blender limitation, not ours — nothing to hook from an add-on.
+Workaround: run the operator again from the panel button; invoke re-derives
+the auto values (channel, background, cutoff) from the image.
 - **N-panel tab.** Confirmed working (1.20.x): `HP Tools` sidebar tab
   (`HEAVYPOLY_panel_tools.py`). 1.21.0 added `Separate Islands` and
   `Copy Diagnostic Report` (runs HP_Check, clipboard) plus a What's New

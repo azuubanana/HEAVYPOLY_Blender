@@ -303,6 +303,13 @@ def _install_startup_file(report=None):
 # Newest first. Shown once after an update. Keep the lines short - the
 # popup does not wrap text. English only, per "No Japanese in the UI".
 WHATS_NEW = (
+    ("1.27.0", (
+        "Grid fill cleans up after itself: stacked rim verts are",
+        "welded, slivers and flipped bow-tie faces removed - the",
+        "bits you had to delete by hand.",
+        "New Show Wireframe option displays the topology on the",
+        "result while you tune the redo panel.",
+    )),
     ("1.26.0", (
         "Grid fill hugs the outline much tighter, especially on",
         "thin stems: inside corners near the edge snap out to it,",

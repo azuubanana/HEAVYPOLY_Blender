@@ -1516,6 +1516,12 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
                     "with the origin placed per piece",
         default=False,
     )
+    show_wire: bpy.props.BoolProperty(
+        name="Show Wireframe",
+        description="Display the wireframe on the result, so the topology "
+                    "is visible while adjusting these settings",
+        default=True,
+    )
     # Original flat bounds and location of the mesh, captured on invoke so
     # that dragging the redo sliders keeps mapping onto the same rectangle
     # even though the mesh itself has already been replaced.
@@ -1551,6 +1557,7 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         column.prop(self, "origin")
         column.prop(self, "thickness")
         column.prop(self, "separate")
+        column.prop(self, "show_wire")
 
     @staticmethod
     def _mesh_rect(obj):
@@ -1869,6 +1876,26 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
                     if hit is not None:
                         vert.co.x = x0 + (hit[0] / width) * (x1 - x0)
                         vert.co.y = y0 + (hit[1] / height) * (y1 - y0)
+
+            # Snapping leaves debris on the rim: stacked verts, sliver
+            # faces, and crossed bow-tie faces that render as flipped
+            # normals - the bits that had to be deleted by hand. Weld the
+            # stacks, then cull anything tiny or not facing up (every
+            # honest face here is flat CCW in the XY plane, normal +Z).
+            cell_local = (cell / width) * ((x1 - x0) or 1.0)
+            bmesh.ops.remove_doubles(bm, verts=bm.verts[:],
+                                     dist=abs(cell_local) * 0.05)
+            bm.normal_update()
+            sliver = abs(cell_local * cell_local) * 0.02
+            debris = [face for face in bm.faces
+                      if face.calc_area() < sliver or face.normal.z < 0.9]
+            if debris:
+                bmesh.ops.delete(bm, geom=debris, context='FACES')
+            if not bm.faces:
+                bm.free()
+                self.report({'WARNING'}, "Grid came out empty - lower "
+                                         "Grid Size.")
+                return {'CANCELLED'}
         else:
             for points in kept:
                 verts = []
@@ -1949,6 +1976,10 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
             obj.modifiers.remove(modifier)
 
         vert_count = len(obj.data.vertices)
+
+        # Wire display carries over to separated pieces, so set it first.
+        obj.show_wire = self.show_wire
+        obj.show_all_edges = self.show_wire
 
         # Optionally hand the pieces straight to Separate Islands, reusing
         # this operator's Origin choice for every piece.

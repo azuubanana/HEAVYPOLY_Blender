@@ -202,10 +202,45 @@ def _open_new_file():
     return None
 
 
+def _enable_node_wrangler(report=None):
+    """Switch on Node Wrangler (Ctrl+T and friends in the shader editor).
+
+    Blender ships it disabled, so Ctrl+T silently does nothing until someone
+    finds the add-on list. Depending on the build it lives either as the
+    legacy bundled add-on "node_wrangler" or as the extension
+    "bl_ext.blender_org.node_wrangler", so match on the last name part. If
+    neither exists (moved to the online extension platform), say so loudly
+    instead of failing silently.
+    """
+    import addon_utils
+
+    enabled = set(bpy.context.preferences.addons.keys())
+    candidates = [m.__name__ for m in addon_utils.modules()
+                  if m.__name__.split(".")[-1] == "node_wrangler"]
+    for name in candidates:
+        if name in enabled:
+            print("[HEAVYPOLY] Node Wrangler already enabled (%s)" % name)
+            return True
+        try:
+            addon_utils.enable(name, default_set=True, persistent=True)
+            print("[HEAVYPOLY] enabled Node Wrangler (%s)" % name)
+            return True
+        except Exception as e:
+            print("[HEAVYPOLY] could not enable %s: %r" % (name, e))
+
+    message = ("Node Wrangler is not installed - get it from "
+               "Preferences > Get Extensions.")
+    if report:
+        report({'WARNING'}, message)
+    print("[HEAVYPOLY] " + message)
+    return False
+
+
 def _apply_preferences(report=None):
-    """Turn off the pie unfold animation so menus appear instantly."""
+    """Turn off the pie unfold animation; turn on Node Wrangler."""
     try:
         bpy.context.preferences.view.pie_animation_timeout = PIE_ANIMATION_TIMEOUT
+        _enable_node_wrangler(report)
         bpy.ops.wm.save_userpref()
         return True
     except Exception as e:
@@ -263,14 +298,14 @@ class HP_OT_setup_apply_keymap(Operator):
 
 
 class HP_OT_setup_apply_preferences(Operator):
-    """Turn off the pie menu animation"""
+    """Turn off the pie menu animation and turn on Node Wrangler"""
     bl_idname = "hp.setup_apply_preferences"
     bl_label = "Apply Preferences"
 
     def execute(self, context):
         _make_backup(self.report)
         if _apply_preferences(self.report):
-            self.report({'INFO'}, "Pie animation disabled.")
+            self.report({'INFO'}, "Pie animation off, Node Wrangler on.")
         return {'FINISHED'}
 
 

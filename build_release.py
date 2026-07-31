@@ -32,7 +32,10 @@ MANIFEST = os.path.join(ROOT, "blender_manifest.toml")
 PAGES_URL = "https://azuubanana.github.io/HEAVYPOLY_Blender"
 
 # Never ship these inside the add-on zip.
-EXCLUDE_DIRS = {"docs", ".git", ".github", "__pycache__", ".vscode", ".idea"}
+# .claude holds Claude Code worktrees - full copies of the repository, which
+# once tripled the zip (101 files instead of 33) before it was excluded.
+EXCLUDE_DIRS = {"docs", ".git", ".github", "__pycache__", ".vscode", ".idea",
+                ".claude"}
 EXCLUDE_FILES = {"build_release.py", "CLAUDE.md", ".gitignore", ".DS_Store"}
 EXCLUDE_SUFFIXES = (".zip", ".pyc")
 

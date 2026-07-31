@@ -52,7 +52,7 @@ the HP Modeling workspace.
 
 Drag this zip onto the Blender window / このzipを Blender のウィンドウにドラッグ:
 
-**https://azuubanana.github.io/HEAVYPOLY_Blender/heavypoly-1.5.0.zip**
+**https://azuubanana.github.io/HEAVYPOLY_Blender/heavypoly-1.20.0.zip**
 
 > ⚠️ **Do not use the green Code > Download ZIP button.** It wraps everything in
 > an extra folder and Blender won't recognise it.
@@ -95,7 +95,7 @@ Bug-fix releases (1.3.0 → 1.3.1) install quietly and need no action.
 | Button | What it does / 内容 |
 |---|---|
 | Apply Keymap | Re-registers the shortcuts / ショートカットを再登録 |
-| Apply Preferences | Turns off the pie animation / パイのアニメーションをオフに |
+| Apply Preferences | Pie animation off, Node Wrangler on / パイのアニメをオフ、Node Wrangler をオン |
 | Install Startup File | Makes File > New open the HP layout / File > New を HP の状態に |
 | Load Workspaces | Adds the HP workspaces, keeps yours / HP のワークスペースを追加 |
 | Replace Workspaces | Adds them and removes the rest / 追加して他を削除 |

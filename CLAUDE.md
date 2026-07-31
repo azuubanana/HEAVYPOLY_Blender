@@ -145,6 +145,14 @@ matching on the operator alone would disable our own pie too.
 live in the 3D View in *every* mode. Registering a double click there ate the
 mesh double click. Use `Grease Pencil Edit Mode`.
 
+**Disabling by idname in the default keyconfig can silently miss.** The
+`disable_*` helpers edit `keyconfigs['Blender']` and match on the operator
+name. For Tab in `Object Non-modal` that did nothing on a real 5.2 install —
+either the idname differs from 4.x or the entry that actually fires is the
+copy in `keyconfigs.user`. `disable_stock_tab()` matches by key alone, skips
+our own binding, covers both keyconfigs, and prints what it switched off.
+If another disable ever "doesn't take", suspect the same two causes first.
+
 ### Cleaning up duplicates
 
 `Clean Up Duplicates` compares keymap items including their **properties**. An

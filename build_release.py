@@ -76,6 +76,24 @@ def bump_version(text, version):
     print("  manifest version -> %s" % version)
 
 
+def bump_readme(version):
+    """Point the manual-download link at the new zip.
+
+    Old zips are deleted on every build, so a stale link in README.md is a
+    dead link. It sat on 1.5.0 for fourteen releases before this existed.
+    """
+    path = os.path.join(ROOT, "README.md")
+    if not os.path.exists(path):
+        return
+    text = open(path, encoding="utf-8").read()
+    new_text, count = re.subn(r'heavypoly-\d+\.\d+\.\d+\.zip',
+                              'heavypoly-%s.zip' % version, text)
+    if count:
+        open(path, "w", encoding="utf-8").write(new_text)
+        print("  README download link -> heavypoly-%s.zip (%d place%s)"
+              % (version, count, "s" if count > 1 else ""))
+
+
 # ---------------------------------------------------------------- zip
 
 
@@ -180,6 +198,7 @@ def main():
 
     text, _ = read_manifest()
     bump_version(text, version)
+    bump_readme(version)
     _, fields = read_manifest()
 
     archive = build_zip(version)

@@ -52,7 +52,7 @@ the HP Modeling workspace.
 
 Drag this zip onto the Blender window / このzipを Blender のウィンドウにドラッグ:
 
-**https://azuubanana.github.io/HEAVYPOLY_Blender/heavypoly-1.20.0.zip**
+**https://azuubanana.github.io/HEAVYPOLY_Blender/heavypoly-1.20.1.zip**
 
 > ⚠️ **Do not use the green Code > Download ZIP button.** It wraps everything in
 > an extra folder and Blender won't recognise it.

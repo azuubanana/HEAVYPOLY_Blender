@@ -542,6 +542,41 @@ def disable_specific_kmi(km=None, idname=None, type=None, value=None, shift=None
         lambda: disable_specific_kmi(km, idname, type, value, shift, ctrl, alt, retries - 1),
         first_interval=0.1)
 
+def disable_stock_tab(retries=10):
+    """Switch off whatever Blender put on plain Tab in Object Non-modal.
+
+    Matching object.editmode_toggle by name in the default keyconfig did
+    nothing on a real 5.2 install - either the idname changed or the live
+    entry is the copy in keyconfigs.user. So: match by key alone, skip our
+    own subdivision toggle, check both keyconfigs, and print every entry
+    that gets switched off so the console shows what was actually there.
+    """
+    wm = bpy.context.window_manager
+    found = False
+    for kc in (wm.keyconfigs.get('Blender'), wm.keyconfigs.user):
+        if kc is None:
+            continue
+        km = kc.keymaps.get('Object Non-modal')
+        if km is None:
+            continue
+        for kmi in km.keymap_items:
+            if (kmi.type == 'TAB' and kmi.value == 'PRESS'
+                    and not kmi.shift and not kmi.ctrl and not kmi.alt
+                    and not kmi.oskey
+                    and kmi.idname != 'view3d.subdivision_toggle'):
+                found = True
+                if kmi.active:
+                    kmi.active = False
+                    print("[HEAVYPOLY] disabled %s on Tab (%s / %s)"
+                          % (kmi.idname, kc.name, km.name))
+    if not found:
+        if retries > 0:
+            bpy.app.timers.register(lambda: disable_stock_tab(retries - 1),
+                                    first_interval=0.2)
+        else:
+            print("[HEAVYPOLY] no stock Tab entry found in Object Non-modal")
+
+
 def get_active_kmi(space: str, **kwargs) -> bpy.types.KeyMapItem:
     kc = bpy.context.window_manager.keyconfigs.active
     km = kc.keymaps.get(space)
@@ -656,8 +691,10 @@ def register():
     # mode-dot column appear in the Outliner - and only the second press,
     # now resolved through the Mesh keymap, reached the subdivision toggle.
     # Mode switching stays available through the selection pie.
-    disable_specific_kmi('Object Non-modal', 'object.editmode_toggle',
-                         'TAB', 'PRESS', False, False, False)
+    # Matching on the operator name in the default keyconfig was not enough
+    # on Azusa's machine, so this matches by key alone and covers the user
+    # keyconfig too.
+    disable_stock_tab()
 
     disable_specific_kmi('Sculpt', 'paint.brush_select','V','PRESS',False,False,False)
     

@@ -303,6 +303,12 @@ def _install_startup_file(report=None):
 # Newest first. Shown once after an update. Keep the lines short - the
 # popup does not wrap text. English only, per "No Japanese in the UI".
 WHATS_NEW = (
+    ("1.26.0", (
+        "Grid fill hugs the outline much tighter, especially on",
+        "thin stems: inside corners near the edge snap out to it,",
+        "and every rim edge gains a midpoint pulled onto the",
+        "outline. Interior quads are untouched.",
+    )),
     ("1.25.0", (
         "Cut Out to Mesh: Grid fill is now built per piece, so",
         "nearby leaves no longer get webbed together.",

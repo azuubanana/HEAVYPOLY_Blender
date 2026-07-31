@@ -1810,16 +1810,22 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
                                                         float(key[1])])
                         face_corners.append(keys)
 
-                # Snap corners that sit outside this island onto its own
-                # outline - and only when it is nearby, so a corner over a
-                # filled pinhole stays put instead of shooting off.
+                # Snap corners onto this island's outline. Outside corners
+                # come in from up to 1.5 cells away (but only when the
+                # outline is nearby, so a corner over a filled pinhole
+                # stays put). Inside corners hugging the outline snap out
+                # to it too - without this the rim zigzags on thin stems -
+                # but only from 0.35 cells, so a corner in the middle of a
+                # stem about one cell wide is left alone.
                 for (gx, gy), pos in corner_pos.items():
                     sample_x = min(int(gx), width - 1)
                     sample_y = min(int(gy), height - 1)
                     if island[sample_y, sample_x]:
-                        continue
+                        reach = cell * 0.35
+                    else:
+                        reach = snap_max
                     hit = _hp_closest_on_loops((pos[0], pos[1]),
-                                               snap_loops[index], snap_max)
+                                               snap_loops[index], reach)
                     if hit is not None:
                         pos[0], pos[1] = hit
 
@@ -1839,6 +1845,30 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
                 self.report({'WARNING'}, "Grid came out empty - lower "
                                          "Grid Size.")
                 return {'CANCELLED'}
+
+            # Tighten the rim. Snapped corners are on the outline, but the
+            # straight edge between them still cuts across curves - most
+            # visible on stems. Split every rim edge once and pull the new
+            # midpoint onto the outline as well, halving the error. Rim
+            # cells become 5-gons; the interior stays pure quads.
+            before_verts = set(bm.verts)
+            rim_edges = [e for e in bm.edges if len(e.link_faces) == 1]
+            if rim_edges:
+                bmesh.ops.subdivide_edges(bm, edges=rim_edges, cuts=1)
+                loc_span_x = (x1 - x0) or 1.0
+                loc_span_y = (y1 - y0) or 1.0
+                for vert in bm.verts:
+                    if vert in before_verts:
+                        continue
+                    pix_x = (vert.co.x - x0) / loc_span_x * width
+                    pix_y = (vert.co.y - y0) / loc_span_y * height
+                    # Midpoints start on their own island's rim, so the
+                    # nearest outline within reach is the right one.
+                    hit = _hp_closest_on_loops((pix_x, pix_y), kept,
+                                               cell * 0.6)
+                    if hit is not None:
+                        vert.co.x = x0 + (hit[0] / width) * (x1 - x0)
+                        vert.co.y = y0 + (hit[1] / height) * (y1 - y0)
         else:
             for points in kept:
                 verts = []

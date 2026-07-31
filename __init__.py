@@ -10,6 +10,7 @@ from . import HEAVYPOLY_HOTKEYS
 from . import HEAVYPOLY_OPERATORS
 from . import HEAVYPOLY_panel_properties
 from . import HEAVYPOLY_panel_render
+from . import HEAVYPOLY_panel_tools
 from . import HEAVYPOLY_pie_add
 from . import HEAVYPOLY_pie_areas
 from . import HEAVYPOLY_pie_boolean
@@ -47,6 +48,7 @@ def register():
         HEAVYPOLY_OPERATORS.register()
         HEAVYPOLY_panel_properties.register()
         HEAVYPOLY_panel_render.register()
+        HEAVYPOLY_panel_tools.register()
         HEAVYPOLY_pie_add.register()
         HEAVYPOLY_pie_areas.register()
         HEAVYPOLY_pie_boolean.register()
@@ -93,6 +95,7 @@ def unregister():
         HEAVYPOLY_OPERATORS,
         HEAVYPOLY_panel_properties,
         HEAVYPOLY_panel_render,
+        HEAVYPOLY_panel_tools,
         HEAVYPOLY_pie_add,
         HEAVYPOLY_pie_areas,
         HEAVYPOLY_pie_boolean,

@@ -649,6 +649,15 @@ def register():
                              'X', 'PRESS', True, True, False)
     disable_specific_kmi('Weight Paint', 'paint.weight_sample_group',
                          'X', 'PRESS', True, True, False)
+    # Tab is HEAVYPOLY's subdivision toggle, but Blender's stock Tab (toggle
+    # Edit Mode) lives in the Object Non-modal keymap, which is checked
+    # before the generic 3D View keymap where ours sits. So in Object Mode
+    # the first press entered Edit Mode - that is also what makes the
+    # mode-dot column appear in the Outliner - and only the second press,
+    # now resolved through the Mesh keymap, reached the subdivision toggle.
+    # Mode switching stays available through the selection pie.
+    disable_specific_kmi('Object Non-modal', 'object.editmode_toggle',
+                         'TAB', 'PRESS', False, False, False)
 
     disable_specific_kmi('Sculpt', 'paint.brush_select','V','PRESS',False,False,False)
     

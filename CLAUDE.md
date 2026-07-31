@@ -63,7 +63,8 @@ That bumps the manifest, builds `docs/heavypoly-<ver>.zip`, hashes it,
 regenerates `docs/index.json`, and deletes the previous zip. **Never hand-edit
 `docs/index.json`** — the hash has to match the archive or installs fail.
 
-A correct build reports **32 files, 0.6 MB**. If the count or size jumps,
+A correct build reports **33 files, 0.6 MB** (was 32 before
+`HEAVYPOLY_panel_tools.py` in 1.20.0). If the count or size jumps,
 something that should be excluded got swept in.
 
 Students install by adding this repository URL once:
@@ -131,6 +132,7 @@ Found and fixed so far:
 | `Z` (3D View) | `VIEW3D_MT_shading_pie` | Two pies at once |
 | `Ctrl+Shift+X` (paint modes) | `paint.sample_color` | Symmetry toggle never reached |
 | `Space` (Transform Modal) | `CONFIRM` | Y-axis lock impossible |
+| `Tab` (Object Non-modal) | `object.editmode_toggle` | First press entered Edit Mode (making the Outliner's mode-dot column appear); subdiv toggle only fired from the second press. Object Non-modal is checked before the generic 3D View keymap, but after Mesh — hence the press-count asymmetry |
 
 **How to diagnose:** Preferences > Keymap, `Key-Binding` tab, type the chord.
 Entries under *different* keymaps (Mesh vs Sculpt vs 3D View) are fine — those
@@ -189,13 +191,16 @@ English so that tutorials and error messages are searchable.
 - **macOS keymap adaptation.** Cmd (`oskey`) instead of Ctrl where it makes
   sense. Blanket replacement is unsafe — `Ctrl+S` and friends would collide.
   Needs a list of the chords that actually hurt on a Mac.
-- **Cut-out meshes.** `Key Out Background` only makes pixels transparent. The
-  next step is trimming the plane to the alpha outline. Plan is grid
-  approximation first (subdivide, drop transparent faces, expose the subdivision
-  count in the redo panel), contour tracing only if that isn't enough. Do not
-  copy from paid add-ons that do this.
-- **N-panel tab.** A place for operators that have no shortcut —
-  `Paste Image as Plane`, `Key Out Background`, and whatever comes next.
+- **Cut-out meshes — verify.** Shipped in 1.20.0 as `Cut Out to Mesh`
+  (`object.hp_cutout_mesh`): contour tracing (marching-squares-style boundary
+  walk, Douglas-Peucker simplify, `triangle_fill`), not the grid approximation
+  originally planned — Azusa asked for the Leafig-style result. Written from
+  scratch; the Leafig zip was deliberately never opened (paid add-on, GPL).
+  The pure-python tracing helpers have offline tests; the Blender side
+  (invoke auto-detection, fill, UVs) is unverified.
+- **N-panel tab — verify.** Shipped in 1.20.0 as the `HP Tools` sidebar tab
+  (`HEAVYPOLY_panel_tools.py`) holding `Paste Image as Plane`,
+  `Key Out Background` and `Cut Out to Mesh`. Not yet confirmed in Blender.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

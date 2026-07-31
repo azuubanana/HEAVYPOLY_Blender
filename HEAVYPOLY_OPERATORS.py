@@ -460,7 +460,13 @@ class HP_OT_Subdivision_Toggle(bpy.types.Operator):
 
     def invoke(self, context, event):
 
+        # Now that Tab reaches this in Object Mode for every object type
+        # (the stock Tab used to eat it there), skip objects that cannot
+        # take a Subdivision modifier instead of erroring on them.
+        supported = {'MESH', 'CURVE', 'SURFACE', 'FONT'}
         for o in bpy.context.selected_objects:
+            if o.type not in supported:
+                continue
             bpy.context.view_layer.objects.active = o
             if 0 < len([m for m in bpy.context.object.modifiers if m.type == "SUBSURF"]):
                 if bpy.context.object.modifiers["Subsurf_Base"].show_viewport == False:
@@ -634,6 +640,7 @@ def draw_func(self, context):
     layout = self.layout
     layout.separator()
     layout.operator("object.hp_key_out_background", icon='IMAGE_ALPHA')
+    layout.operator("object.hp_cutout_mesh", icon='MESH_DATA')
     layout.separator()
     layout.operator("object.set_camera_off_wire", icon='HIDE_ON')
     layout.operator("object.set_camera_on_textured", icon='HIDE_OFF')
@@ -1206,7 +1213,373 @@ class HP_OT_key_out_background(bpy.types.Operator):
         return {'FINISHED'}
 
 
+# ---------------------------------------------------------------- cut-out mesh
+#
+# Trims a textured plane to the image outline, like a foliage card. Written
+# from scratch - the idea exists in paid add-ons (Leafig), but per CLAUDE.md
+# no code is taken from them, only the behaviour as observed in their UI.
+
+def hp_find_object_image(obj):
+    """First image texture across the object's materials, or None."""
+    for slot in getattr(obj, "material_slots", []):
+        material = slot.material
+        if material is None or not material.use_nodes:
+            continue
+        for node in material.node_tree.nodes:
+            if node.type == 'TEX_IMAGE' and node.image is not None:
+                return node.image
+    return None
+
+
+def hp_find_key_colour(obj):
+    """The colour Key Out Background keyed on this object, or None."""
+    for slot in getattr(obj, "material_slots", []):
+        material = slot.material
+        if material is None or not material.use_nodes:
+            continue
+        for node in material.node_tree.nodes:
+            if node.label == "HP Key" and node.type == 'MIX':
+                return tuple(node.inputs[7].default_value)[:3]
+    return None
+
+
+def hp_trace_mask_loops(binary):
+    """Closed boundary loops of a boolean mask, foreground kept on the left.
+
+    Runs on pixel corners, so coordinates go 0..W and 0..H. Walking with the
+    foreground on the left makes outer outlines counter-clockwise and holes
+    clockwise, which is how the caller tells them apart. Where two foreground
+    pixels touch only diagonally the walk turns left, keeping the two blobs
+    in separate loops instead of fusing them at a single point.
+    """
+    import numpy as np
+
+    height, width = binary.shape
+    grid = np.zeros((height + 2, width + 2), dtype=bool)
+    grid[1:-1, 1:-1] = binary
+
+    segments = {}
+
+    def add(start, end):
+        segments.setdefault(start, []).append(end)
+
+    above, below = grid[1:, :], grid[:-1, :]
+    left, right = grid[:, :-1], grid[:, 1:]
+    for r, c in np.argwhere(above & ~below):   # fg above the line: walk +x
+        add((int(c), int(r) + 1), (int(c) + 1, int(r) + 1))
+    for r, c in np.argwhere(below & ~above):   # fg below: walk -x
+        add((int(c) + 1, int(r) + 1), (int(c), int(r) + 1))
+    for r, c in np.argwhere(left & ~right):    # fg left of the line: walk +y
+        add((int(c) + 1, int(r)), (int(c) + 1, int(r) + 1))
+    for r, c in np.argwhere(right & ~left):    # fg right: walk -y
+        add((int(c) + 1, int(r) + 1), (int(c) + 1, int(r)))
+
+    loops = []
+    while segments:
+        start = next(iter(segments))
+        outs = segments[start]
+        current = outs.pop()
+        if not outs:
+            del segments[start]
+        direction = (current[0] - start[0], current[1] - start[1])
+        loop = [start]
+        closed = True
+        while current != start:
+            outs = segments.get(current)
+            if not outs:
+                closed = False   # dangling segment; should not happen
+                break
+            dx, dy = direction
+            chosen = None
+            for turn in ((-dy, dx), (dx, dy), (dy, -dx)):   # left, straight, right
+                candidate = (current[0] + turn[0], current[1] + turn[1])
+                if candidate in outs:
+                    chosen, chosen_direction = candidate, turn
+                    break
+            if chosen is None:
+                closed = False
+                break
+            outs.remove(chosen)
+            if not outs:
+                del segments[current]
+            if chosen_direction != direction:
+                loop.append(current)   # a corner; straight runs collapse
+            current = chosen
+            direction = chosen_direction
+        if closed and len(loop) >= 3:
+            loops.append([(x - 1, y - 1) for x, y in loop])   # un-pad
+    return loops
+
+
+def _hp_dp_simplify(points, epsilon):
+    """Douglas-Peucker on an open polyline; endpoints are kept."""
+    if epsilon <= 0 or len(points) < 3:
+        return list(points)
+    keep = [False] * len(points)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(points) - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b - a < 2:
+            continue
+        ax, ay = points[a]
+        bx, by = points[b]
+        dx, dy = bx - ax, by - ay
+        length = math.hypot(dx, dy)
+        worst, worst_index = -1.0, -1
+        for i in range(a + 1, b):
+            px, py = points[i]
+            if length < 1e-9:
+                d = math.hypot(px - ax, py - ay)
+            else:
+                d = abs(dx * (py - ay) - dy * (px - ax)) / length
+            if d > worst:
+                worst, worst_index = d, i
+        if worst > epsilon:
+            keep[worst_index] = True
+            stack.append((a, worst_index))
+            stack.append((worst_index, b))
+    return [p for p, k in zip(points, keep) if k]
+
+
+def hp_simplify_loop(points, epsilon):
+    """Douglas-Peucker for a closed loop: split at the far point, do halves."""
+    if epsilon <= 0 or len(points) < 5:
+        return list(points)
+    first = points[0]
+    split = max(range(1, len(points)),
+                key=lambda i: (points[i][0] - first[0]) ** 2
+                            + (points[i][1] - first[1]) ** 2)
+    a = _hp_dp_simplify(points[:split + 1], epsilon)
+    b = _hp_dp_simplify(points[split:] + [first], epsilon)
+    return a[:-1] + b[:-1]
+
+
+def _hp_loop_area(points):
+    """Signed area; positive means counter-clockwise (an outer outline)."""
+    area = 0.0
+    for i in range(len(points)):
+        x0, y0 = points[i]
+        x1, y1 = points[(i + 1) % len(points)]
+        area += x0 * y1 - x1 * y0
+    return 0.5 * area
+
+
+class HP_OT_cutout_mesh(bpy.types.Operator):
+    """Trim the plane to the image outline and fill the inside with triangles"""
+    bl_idname = "object.hp_cutout_mesh"
+    bl_label = "Cut Out to Mesh"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    channel: bpy.props.EnumProperty(
+        name="Channel",
+        description="What separates the image from its background",
+        items=[
+            ('ALPHA', "Alpha", "Use the image's own transparency"),
+            ('DISTANCE', "Key Colour",
+             "Distance from the background colour, like Key Out Background"),
+        ],
+        default='ALPHA',
+    )
+    background: bpy.props.FloatVectorProperty(
+        name="Background", subtype='COLOR', size=3,
+        min=0.0, max=1.0, default=(1.0, 1.0, 1.0),
+    )
+    smoothing: bpy.props.IntProperty(
+        name="Smoothing",
+        description="Blur passes over the mask before cutting; evens out noisy edges",
+        default=0, min=0, max=16,
+    )
+    cutoff: bpy.props.FloatProperty(
+        name="Cutoff",
+        description="How opaque (or far from the background colour) a pixel "
+                    "has to be to count as inside",
+        default=0.5, min=0.0, max=1.0,
+    )
+    pixel_error: bpy.props.FloatProperty(
+        name="Pixel Error",
+        description="How far the outline may stray from the pixel boundary; "
+                    "higher means fewer vertices",
+        default=1.0, min=0.0, max=64.0,
+    )
+    ignore_inner: bpy.props.BoolProperty(
+        name="Ignore Inner",
+        description="Skip holes inside the outline",
+        default=False,
+    )
+    # Original flat bounds of the mesh, captured on invoke so that dragging
+    # the redo sliders keeps mapping onto the same rectangle even though the
+    # mesh itself has already been replaced.
+    rect: bpy.props.FloatVectorProperty(size=4, options={'HIDDEN', 'SKIP_SAVE'})
+    rect_valid: bpy.props.BoolProperty(default=False, options={'HIDDEN', 'SKIP_SAVE'})
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return context.mode == 'OBJECT' and obj is not None and obj.type == 'MESH'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        column = layout.column()
+        column.prop(self, "channel")
+        if self.channel == 'DISTANCE':
+            column.prop(self, "background")
+        column.prop(self, "smoothing")
+        column.prop(self, "cutoff")
+        layout.separator()
+        column = layout.column()
+        column.prop(self, "pixel_error")
+        column.prop(self, "ignore_inner")
+
+    @staticmethod
+    def _mesh_rect(obj):
+        xs = [v.co.x for v in obj.data.vertices]
+        ys = [v.co.y for v in obj.data.vertices]
+        if (not xs or max(xs) - min(xs) < 1e-6
+                or max(ys) - min(ys) < 1e-6):
+            return (-0.5, 0.5, -0.5, 0.5)
+        return (min(xs), max(xs), min(ys), max(ys))
+
+    def invoke(self, context, event):
+        obj = context.active_object
+        self.rect = self._mesh_rect(obj)
+        self.rect_valid = True
+
+        # Clipboard images are usually opaque, so alpha would select the
+        # whole plane. Fall back to colour keying, and reuse the colour
+        # Key Out Background picked, if it ran on this object already.
+        image = hp_find_object_image(obj)
+        if image is not None and not (image.channels >= 4
+                                      and hp_image_has_transparency(image)):
+            self.channel = 'DISTANCE'
+            key_colour = hp_find_key_colour(obj)
+            if key_colour is not None:
+                self.background = key_colour
+        return self.execute(context)
+
+    def execute(self, context):
+        try:
+            import numpy as np
+        except ImportError:
+            self.report({'ERROR'}, "This Blender build has no numpy.")
+            return {'CANCELLED'}
+
+        obj = context.active_object
+        image = hp_find_object_image(obj)
+        if image is None:
+            self.report({'WARNING'}, "No image texture on the object's materials.")
+            return {'CANCELLED'}
+
+        width, height = image.size
+        if width < 2 or height < 2:
+            self.report({'WARNING'}, "Image has no pixels to trace.")
+            return {'CANCELLED'}
+
+        channels = image.channels
+        if self.channel == 'ALPHA' and channels < 4:
+            self.report({'WARNING'},
+                        "Image has no alpha channel - switch Channel to Key Colour.")
+            return {'CANCELLED'}
+
+        pixels = np.empty(width * height * channels, dtype=np.float32)
+        image.pixels.foreach_get(pixels)
+        pixels = pixels.reshape(height, width, channels)
+
+        if self.channel == 'ALPHA':
+            mask = pixels[:, :, 3].copy()
+        else:
+            if channels >= 3:
+                rgb = pixels[:, :, :3]
+            else:
+                rgb = np.repeat(pixels[:, :, :1], 3, axis=2)
+            background = np.array(self.background[:], dtype=np.float32)
+            mask = np.sqrt(((rgb - background) ** 2).sum(axis=2)) / 1.7320508
+            if channels >= 4:
+                mask = mask * pixels[:, :, 3]   # transparent is background too
+
+        for _ in range(self.smoothing):
+            padded = np.pad(mask, 1, mode='edge')
+            mask = (padded[:-2, :-2] + padded[:-2, 1:-1] + padded[:-2, 2:]
+                    + padded[1:-1, :-2] + padded[1:-1, 1:-1] + padded[1:-1, 2:]
+                    + padded[2:, :-2] + padded[2:, 1:-1] + padded[2:, 2:]) / 9.0
+
+        binary = mask >= max(self.cutoff, 1e-4)
+        if not binary.any():
+            self.report({'WARNING'}, "Everything is background - lower Cutoff "
+                                     "or check the Channel setting.")
+            return {'CANCELLED'}
+
+        loops = hp_trace_mask_loops(binary)
+        if not loops:
+            self.report({'WARNING'}, "Could not trace an outline.")
+            return {'CANCELLED'}
+
+        islands = holes = 0
+        kept = []
+        for loop in loops:
+            if _hp_loop_area(loop) > 0.0:
+                islands += 1
+            else:
+                if self.ignore_inner:
+                    continue
+                holes += 1
+            simplified = hp_simplify_loop(loop, self.pixel_error)
+            if len(simplified) >= 3:
+                kept.append(simplified)
+
+        if not kept:
+            self.report({'WARNING'}, "Outline vanished - lower Pixel Error.")
+            return {'CANCELLED'}
+
+        if not self.rect_valid:
+            self.rect = self._mesh_rect(obj)
+            self.rect_valid = True
+        x0, x1, y0, y1 = self.rect
+
+        bm = bmesh.new()
+        for points in kept:
+            verts = [bm.verts.new((x0 + (px / width) * (x1 - x0),
+                                   y0 + (py / height) * (y1 - y0), 0.0))
+                     for px, py in points]
+            for i in range(len(verts)):
+                bm.edges.new((verts[i], verts[(i + 1) % len(verts)]))
+
+        bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False,
+                                edges=bm.edges[:],
+                                normal=Vector((0.0, 0.0, 1.0)))
+        if not bm.faces:
+            bm.free()
+            self.report({'WARNING'}, "Fill failed - try raising Pixel Error "
+                                     "or Smoothing.")
+            return {'CANCELLED'}
+
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        if sum(face.normal.z for face in bm.faces) < 0.0:
+            bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+
+        # Rebuild UVs from the pixel grid so the texture lands exactly where
+        # it was on the uncut plane.
+        uv_layer = bm.loops.layers.uv.new("UVMap")
+        span_x = (x1 - x0) or 1.0
+        span_y = (y1 - y0) or 1.0
+        for face in bm.faces:
+            for face_loop in face.loops:
+                co = face_loop.vert.co
+                face_loop[uv_layer].uv = ((co.x - x0) / span_x,
+                                          (co.y - y0) / span_y)
+
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+
+        self.report({'INFO'}, "Cut out %d island(s), %d hole(s), %d verts."
+                    % (islands, holes, len(obj.data.vertices)))
+        return {'FINISHED'}
+
+
 classes = (
+    HP_OT_cutout_mesh,
     HP_OT_key_out_background,
     HP_OT_paste_image_plane,
     HP_OT_toggle_symmetry,

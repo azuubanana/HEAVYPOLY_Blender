@@ -220,8 +220,12 @@ English so that tutorials and error messages are searchable.
   approximation originally planned — Azusa asked for the Leafig-style result.
   Written from scratch; the Leafig zip was deliberately never opened (paid
   add-on, GPL). 1.21.0 added Inset (mask erosion), Origin (Keep/Center/
-  Bottom), Thickness (managed Solidify) and `Separate Islands` — those still
-  need verifying.
+  Bottom), Thickness (managed Solidify) and `Separate Islands`. 1.23.0 made
+  the cutoff per-image (Otsu; fixed 0.5 shredded pale soft-brushed images),
+  guessed the background from the image border, and added Min Size. 1.24.0
+  added Fill = Grid (Quads): integral-image cell coverage, rim corners
+  snapped to the traced outline (only within 1.5 cells, so filled pinholes
+  don't yank verts to the silhouette) — for pieces that get animated.
 - **N-panel tab.** Confirmed working (1.20.x): `HP Tools` sidebar tab
   (`HEAVYPOLY_panel_tools.py`). 1.21.0 added `Separate Islands` and
   `Copy Diagnostic Report` (runs HP_Check, clipboard) plus a What's New

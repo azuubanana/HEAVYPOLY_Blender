@@ -1365,6 +1365,30 @@ def _hp_loop_area(points):
     return 0.5 * area
 
 
+def _hp_closest_on_loops(point, loops, max_dist):
+    """Closest point on any loop's polyline, or None beyond max_dist."""
+    best_d2 = max_dist * max_dist
+    best = None
+    px, py = point
+    for pts in loops:
+        count = len(pts)
+        for i in range(count):
+            ax, ay = pts[i]
+            bx, by = pts[(i + 1) % count]
+            dx, dy = bx - ax, by - ay
+            length2 = dx * dx + dy * dy
+            if length2 < 1e-12:
+                t = 0.0
+            else:
+                t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length2))
+            cx, cy = ax + t * dx, ay + t * dy
+            d2 = (px - cx) ** 2 + (py - cy) ** 2
+            if d2 < best_d2:
+                best_d2 = d2
+                best = (cx, cy)
+    return best
+
+
 class HP_OT_cutout_mesh(bpy.types.Operator):
     """Trim the plane to the image outline and fill the inside with triangles"""
     bl_idname = "object.hp_cutout_mesh"
@@ -1423,6 +1447,25 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         description="Skip holes inside the outline",
         default=False,
     )
+    fill_mode: bpy.props.EnumProperty(
+        name="Fill",
+        description="What kind of polygons fill the inside",
+        items=[
+            ('TRIANGLES', "Triangles",
+             "Exact outline with a triangle fill - lightest, fine for "
+             "flat cards that never deform"),
+            ('GRID', "Grid (Quads)",
+             "Even quads that bend, rig and subdivide cleanly - use this "
+             "when the piece will be animated"),
+        ],
+        default='TRIANGLES',
+    )
+    grid_size: bpy.props.FloatProperty(
+        name="Grid Size",
+        description="Quad size in pixels; smaller follows the outline "
+                    "closer and bends more smoothly",
+        default=16.0, min=2.0, max=256.0,
+    )
     origin: bpy.props.EnumProperty(
         name="Origin",
         description="Where to put the object origin after cutting",
@@ -1468,6 +1511,9 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         column.prop(self, "ignore_inner")
         layout.separator()
         column = layout.column()
+        column.prop(self, "fill_mode")
+        if self.fill_mode == 'GRID':
+            column.prop(self, "grid_size")
         column.prop(self, "origin")
         column.prop(self, "thickness")
 
@@ -1668,24 +1714,78 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
 
         bm = bmesh.new()
         uv_of = {}   # UVs come from the pixel grid, recorded at creation
-        for points in kept:
-            verts = []
-            for px, py in points:
-                vert = bm.verts.new((x0 + (px / width) * (x1 - x0),
-                                     y0 + (py / height) * (y1 - y0), 0.0))
-                uv_of[vert] = (px / width, py / height)
-                verts.append(vert)
-            for i in range(len(verts)):
-                bm.edges.new((verts[i], verts[(i + 1) % len(verts)]))
 
-        bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False,
-                                edges=bm.edges[:],
-                                normal=Vector((0.0, 0.0, 1.0)))
-        if not bm.faces:
-            bm.free()
-            self.report({'WARNING'}, "Fill failed - try raising Pixel Error "
-                                     "or Smoothing.")
-            return {'CANCELLED'}
+        if self.fill_mode == 'GRID':
+            # Even quads inside; rim corners that fall outside the shape
+            # snap onto the traced outline. Quads bend and subdivide the
+            # way triangles never do - this mode exists for animation.
+            cell = max(2, int(round(self.grid_size)))
+            integral = np.zeros((height + 1, width + 1), dtype=np.int64)
+            integral[1:, 1:] = binary.cumsum(0).cumsum(1)
+
+            corner_pos = {}    # (x, y) grid corner -> [x, y], maybe snapped
+            face_corners = []
+            for cy0 in range(0, height, cell):
+                cy1 = min(cy0 + cell, height)
+                for cx0 in range(0, width, cell):
+                    cx1 = min(cx0 + cell, width)
+                    covered = (integral[cy1, cx1] - integral[cy0, cx1]
+                               - integral[cy1, cx0] + integral[cy0, cx0])
+                    if covered == 0:
+                        continue
+                    keys = ((cx0, cy0), (cx1, cy0), (cx1, cy1), (cx0, cy1))
+                    for key in keys:
+                        corner_pos.setdefault(key, [float(key[0]),
+                                                    float(key[1])])
+                    face_corners.append(keys)
+
+            # Snap only nearby background corners; a corner floating over a
+            # filled pinhole is far from every kept outline and must stay
+            # put rather than shoot off to the silhouette.
+            snap_max = cell * 1.5
+            for (gx, gy), pos in corner_pos.items():
+                sample_x = min(int(gx), width - 1)
+                sample_y = min(int(gy), height - 1)
+                if binary[sample_y, sample_x]:
+                    continue
+                hit = _hp_closest_on_loops((pos[0], pos[1]), kept, snap_max)
+                if hit is not None:
+                    pos[0], pos[1] = hit
+
+            vert_of = {}
+            for key, pos in corner_pos.items():
+                vert_of[key] = bm.verts.new(
+                    (x0 + (pos[0] / width) * (x1 - x0),
+                     y0 + (pos[1] / height) * (y1 - y0), 0.0))
+            for keys in face_corners:
+                try:
+                    bm.faces.new([vert_of[key] for key in keys])
+                except ValueError:
+                    pass   # collapsed by snapping; skip
+            if not bm.faces:
+                bm.free()
+                self.report({'WARNING'}, "Grid came out empty - lower "
+                                         "Grid Size.")
+                return {'CANCELLED'}
+        else:
+            for points in kept:
+                verts = []
+                for px, py in points:
+                    vert = bm.verts.new((x0 + (px / width) * (x1 - x0),
+                                         y0 + (py / height) * (y1 - y0), 0.0))
+                    uv_of[vert] = (px / width, py / height)
+                    verts.append(vert)
+                for i in range(len(verts)):
+                    bm.edges.new((verts[i], verts[(i + 1) % len(verts)]))
+
+            bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False,
+                                    edges=bm.edges[:],
+                                    normal=Vector((0.0, 0.0, 1.0)))
+            if not bm.faces:
+                bm.free()
+                self.report({'WARNING'}, "Fill failed - try raising Pixel "
+                                         "Error or Smoothing.")
+                return {'CANCELLED'}
 
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
         if sum(face.normal.z for face in bm.faces) < 0.0:

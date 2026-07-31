@@ -303,6 +303,12 @@ def _install_startup_file(report=None):
 # Newest first. Shown once after an update. Keep the lines short - the
 # popup does not wrap text. English only, per "No Japanese in the UI".
 WHATS_NEW = (
+    ("1.24.0", (
+        "Cut Out to Mesh: new Fill option. Triangles (default) for",
+        "flat cards, or Grid (Quads) for pieces you will bend,",
+        "rig or animate - even quads with the rim snapped to the",
+        "outline. Grid Size sets the quad size in pixels.",
+    )),
     ("1.23.0", (
         "Cut Out to Mesh picks its cutoff per image now, guesses",
         "the background colour from the image border, and fills",

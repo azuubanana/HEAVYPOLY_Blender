@@ -153,6 +153,20 @@ copy in `keyconfigs.user`. `disable_stock_tab()` matches by key alone, skips
 our own binding, covers both keyconfigs, and prints what it switched off.
 If another disable ever "doesn't take", suspect the same two causes first.
 
+**Our own disables read as user edits.** Disabling a stock item in
+`keyconfigs.user` marks it `is_user_modified`, so the preferences panel said
+"1 shortcut(s) changed from the defaults" forever (survives reinstalls —
+the disable is re-applied on every register). `_modified_keymap_count()`
+now skips entries listed in `INTENTIONAL_DISABLES`; add to that list when
+disabling anything else in the user keyconfig.
+
+**HP_Check must know about extension paths.** `bpy.utils.script_paths()`
+does not include `.../<version>/extensions/`, so on a normal extension
+install the report said "0 files found" while everything worked. It now
+also walks `user_resource('EXTENSIONS')` and the directories of loaded
+`bl_ext.*.HEAVYPOLY_*` modules, and matches module names on the last dotted
+part.
+
 ### Cleaning up duplicates
 
 `Clean Up Duplicates` compares keymap items including their **properties**. An

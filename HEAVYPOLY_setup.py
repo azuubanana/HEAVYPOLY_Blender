@@ -85,6 +85,21 @@ def _addon_version():
     return match.group(1) if match else ""
 
 
+# Shortcuts HEAVYPOLY disables on purpose (keymap name, key type). These
+# read as "user modified" to Blender, but they are ours, so the "changed
+# from the defaults" counter must not blame them on the user.
+INTENTIONAL_DISABLES = (
+    ("Object Non-modal", 'TAB'),   # stock Edit Mode toggle; Tab is subdiv
+)
+
+
+def _is_intentional_disable(km, kmi):
+    if kmi.active:
+        return False
+    return any(km.name == name and kmi.type == key
+               for name, key in INTENTIONAL_DISABLES)
+
+
 def _modified_keymap_count():
     """How many shortcuts the user has changed by hand."""
     kc = bpy.context.window_manager.keyconfigs.user
@@ -93,7 +108,8 @@ def _modified_keymap_count():
     count = 0
     for km in kc.keymaps:
         for kmi in km.keymap_items:
-            if getattr(kmi, "is_user_modified", False):
+            if (getattr(kmi, "is_user_modified", False)
+                    and not _is_intentional_disable(km, kmi)):
                 count += 1
     return count
 
@@ -282,6 +298,15 @@ def _install_startup_file(report=None):
 # Newest first. Shown once after an update. Keep the lines short - the
 # popup does not wrap text. English only, per "No Japanese in the UI".
 WHATS_NEW = (
+    ("1.22.0", (
+        "Separate Islands: each piece's origin now goes to its",
+        "bottom center by default (change it in the redo panel).",
+        "Troubleshooting panel reorganised, with when-to-use notes.",
+        "What's New button always visible here; the popup after",
+        "updates now actually opens.",
+        "Diagnostic report understands extension installs.",
+        "'1 shortcut changed' no longer counts HEAVYPOLY's own Tab fix.",
+    )),
     ("1.21.0", (
         "N panel > HP Tools: Copy Diagnostic Report. One click,",
         "then paste it to your teacher when something is wrong.",
@@ -829,8 +854,15 @@ def _whats_new_popup():
     if not _whats_new_entries(prefs):
         prefs.seen_version = current   # nothing listed for this jump
         return None
+    # Timers run without a window in their context, and invoke_props_dialog
+    # refuses to open without one - that is why the 1.21.0 popup never
+    # appeared. Borrow the first window.
+    wm = bpy.context.window_manager
+    if not wm.windows:
+        return 0.5
     try:
-        bpy.ops.hp.setup_whats_new('INVOKE_DEFAULT')
+        with bpy.context.temp_override(window=wm.windows[0]):
+            bpy.ops.hp.setup_whats_new('INVOKE_DEFAULT')
     except Exception as e:
         print("[HEAVYPOLY] what's new popup failed: %r" % (e,))
     return None
@@ -897,7 +929,6 @@ class HEAVYPOLY_Preferences(AddonPreferences):
             col.label(text="Apply All to get the new startup file.")
             col.label(text="Save your keymap first if you changed any shortcuts.")
             col.operator("hp.setup_save_keymap", icon='FILE_TICK')
-            col.operator("hp.setup_whats_new", text="What's New", icon='INFO')
         else:
             box.label(text="Applied  (%s)" % (current or "?"), icon='CHECKMARK')
 
@@ -905,6 +936,10 @@ class HEAVYPOLY_Preferences(AddonPreferences):
         if modified:
             box.label(text="%d shortcut(s) changed from the defaults." % modified,
                       icon='KEYINGSET')
+
+        # Always reachable, not only right after an update - pressing
+        # Apply All used to make the only What's New button vanish.
+        box.operator("hp.setup_whats_new", text="What's New", icon='INFO')
 
         col = layout.column()
         col.scale_y = 2.0
@@ -934,26 +969,38 @@ class HEAVYPOLY_Preferences(AddonPreferences):
                     icon='TRIA_DOWN' if self.show_trouble else 'TRIA_RIGHT',
                     emboss=False)
         if self.show_trouble:
+            # Grouped mild-to-drastic, each with a line on when to use it.
+            # This section used to be one undifferentiated pile of buttons.
             box = layout.box()
-            col = box.column(align=True)
-            col.operator("hp.copy_diagnostic", icon='COPYDOWN')
-            col.separator()
-            row = col.row(align=True)
+            box.label(text="Something wrong? Start here:", icon='QUESTION')
+            box.operator("hp.copy_diagnostic", icon='COPYDOWN')
+            box.label(text="One click, then paste the report to your teacher.")
+
+            box = layout.box()
+            box.label(text="Your own shortcuts:", icon='KEYINGSET')
+            row = box.row(align=True)
             row.operator("hp.setup_save_keymap", icon='FILE_TICK')
             row.operator("hp.setup_load_keymap", icon='FILE_REFRESH')
+            box.label(text="Save before updating if you changed any keys.")
 
-            col.separator()
-            col.operator("hp.setup_reset_keymap", icon='LOOP_BACK')
+            box = layout.box()
+            box.label(text="Keys acting strange?", icon='ERROR')
+            col = box.column(align=True)
             col.operator("hp.setup_cleanup", icon='BRUSH_DATA')
+            col.operator("hp.setup_reset_keymap", icon='LOOP_BACK')
             col.operator("hp.setup_load_autosave", icon='RECOVER_LAST')
+            hints = box.column(align=True)
+            hints.label(text="Clean Up - one key triggers two things at once.")
+            hints.label(text="Reset - shortcuts are a mess, start over fresh.")
+            hints.label(text="Auto-Saved - undo a repair that made it worse.")
 
-            col.separator()
-            col.operator("hp.setup_restore", icon='TRASH')
-
-            col.separator()
-            col.operator("hp.setup_open_config", icon='FILE_FOLDER')
+            box = layout.box()
+            box.label(text="Last resort:", icon='TRASH')
+            box.operator("hp.setup_restore", icon='TRASH')
+            box.label(text="Back to how everything was before HEAVYPOLY.")
+            box.operator("hp.setup_open_config", icon='FILE_FOLDER')
             box.label(text="Close Blender, then delete the version folder "
-                           "for a full reset.", icon='ERROR')
+                           "for a full reset.")
 
             if not os.path.exists(_backup_path()):
                 box.label(text="No backup yet. One is made the first time "

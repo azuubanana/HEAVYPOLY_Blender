@@ -85,6 +85,19 @@ def find_hp_files():
     for extra in (bpy.utils.user_resource('SCRIPTS'), bpy.utils.resource_path('LOCAL')):
         if extra:
             roots.append(extra)
+    # Extensions (4.2+) live outside every script path, in
+    # .../<version>/extensions/<repo>/<package>. This report used to say
+    # "0 files found" on a perfectly healthy extension install.
+    try:
+        ext_root = bpy.utils.user_resource('EXTENSIONS')
+        if ext_root:
+            roots.append(ext_root)
+    except Exception:
+        pass
+    # And wherever an already-loaded HEAVYPOLY module actually came from.
+    for mod_name, module in list(sys.modules.items()):
+        if "HEAVYPOLY" in mod_name and getattr(module, "__file__", None):
+            roots.append(os.path.dirname(module.__file__))
     seen_roots = set()
     for root in roots:
         if not root or root in seen_roots or not os.path.isdir(root):
@@ -116,16 +129,21 @@ else:
 
 out()
 out("[%s]" % t("modules"))
-loaded = sorted(m for m in sys.modules if m.startswith("HEAVYPOLY") or m == "jmQuickPipe")
+# As an extension the modules are named bl_ext.<repo>.<package>.HEAVYPOLY_*,
+# so match on the last dotted part, not the full name.
+loaded = sorted(m for m in sys.modules
+                if m.split(".")[-1].startswith("HEAVYPOLY")
+                or m.split(".")[-1] == "jmQuickPipe")
 if loaded:
     for m in loaded:
         out("  loaded : %s" % m)
 else:
     out("  " + t("none"))
 
+_loaded_tails = {m.split(".")[-1] for m in sys.modules}
 not_loaded = sorted(
     os.path.splitext(f)[0] for f in hp_files
-    if os.path.splitext(f)[0] not in sys.modules
+    if os.path.splitext(f)[0] not in _loaded_tails
 )
 for m in not_loaded:
     out("  FAILED : %s   <-- did not import" % m)

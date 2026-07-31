@@ -11,7 +11,7 @@ bl_info = {
     }
 
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Matrix
 import math
 import os
 import bmesh
@@ -1662,10 +1662,43 @@ class HP_OT_separate_islands(bpy.types.Operator):
     bl_label = "Separate Islands"
     bl_options = {'REGISTER', 'UNDO'}
 
+    origin: bpy.props.EnumProperty(
+        name="Origin",
+        description="Where each piece's origin goes",
+        items=[
+            ('BOTTOM', "Bottom",
+             "Bottom middle of each piece - for things that stand on the ground"),
+            ('CENTER', "Center", "Middle of each piece"),
+            ('KEEP', "Keep", "Leave the origins where they are"),
+        ],
+        default='BOTTOM',
+    )
+
     @classmethod
     def poll(cls, context):
         obj = context.active_object
         return context.mode == 'OBJECT' and obj is not None and obj.type == 'MESH'
+
+    @staticmethod
+    def _set_origin(piece, mode):
+        """Move the origin without moving the piece on screen.
+
+        Bottom and centre are taken in world space, so a plane stood up by
+        rotation still gets its origin at the visually lowest point.
+        """
+        matrix = piece.matrix_world
+        coords = [matrix @ v.co for v in piece.data.vertices]
+        xs = [c.x for c in coords]
+        ys = [c.y for c in coords]
+        zs = [c.z for c in coords]
+        target = Vector(((min(xs) + max(xs)) / 2.0,
+                         (min(ys) + max(ys)) / 2.0,
+                         min(zs) if mode == 'BOTTOM'
+                         else (min(zs) + max(zs)) / 2.0))
+        local = matrix.inverted() @ target
+        piece.data.transform(Matrix.Translation(-local))
+        piece.matrix_world = matrix @ Matrix.Translation(local)
+        piece.data.update()
 
     def execute(self, context):
         before = len(context.scene.objects)
@@ -1675,15 +1708,20 @@ class HP_OT_separate_islands(bpy.types.Operator):
         except Exception as e:
             print("[HEAVYPOLY] separate failed: %r" % (e,))
         bpy.ops.object.mode_set(mode='OBJECT')
-
         made = len(context.scene.objects) - before
-        if made == 0:
-            self.report({'INFO'}, "Only one piece - nothing to separate.")
-            return {'FINISHED'}
 
-        # Give every piece its own origin so they move independently.
-        bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='MEDIAN')
-        self.report({'INFO'}, "Separated into %d objects." % (made + 1))
+        # Even when nothing separated (a single island), still place the
+        # origin - and keep doing it on redo when the pieces already exist.
+        if self.origin != 'KEEP':
+            for piece in context.selected_objects:
+                if piece.type == 'MESH' and piece.data.vertices:
+                    self._set_origin(piece, self.origin)
+
+        if made:
+            self.report({'INFO'}, "Separated into %d objects." % (made + 1))
+        else:
+            self.report({'INFO'}, "Only one piece - origin set, nothing to "
+                                  "separate.")
         return {'FINISHED'}
 
 

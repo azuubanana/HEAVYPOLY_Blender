@@ -1437,22 +1437,30 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         name="Background", subtype='COLOR', size=3,
         min=0.0, max=1.0, default=(1.0, 1.0, 1.0),
     )
+    # The per-image tuning values all carry SKIP_SAVE: every fresh run
+    # starts from clean defaults (cutoff is then auto-derived). Experiment
+    # leftovers used to persist invisibly - Cutoff 0.0 or Inset 2.25 from
+    # the last session wrecked the next image, and with Backspace-reset not
+    # working in redo panels there was no way out.
     smoothing: bpy.props.IntProperty(
         name="Smoothing",
         description="Blur passes over the mask before cutting; evens out noisy edges",
         default=0, min=0, max=16,
+        options={'SKIP_SAVE'},
     )
     cutoff: bpy.props.FloatProperty(
         name="Cutoff",
         description="How opaque (or far from the background colour) a pixel "
                     "has to be to count as inside",
         default=0.5, min=0.0, max=1.0,
+        options={'SKIP_SAVE'},
     )
     pixel_error: bpy.props.FloatProperty(
         name="Pixel Error",
         description="How far the outline may stray from the pixel boundary; "
                     "higher means fewer vertices",
         default=1.0, min=0.0, max=64.0,
+        options={'SKIP_SAVE'},
     )
     inset: bpy.props.FloatProperty(
         name="Inset",
@@ -1469,6 +1477,7 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         description="Fill holes and drop specks smaller than this many "
                     "pixels across",
         default=4.0, min=0.0, max=256.0,
+        options={'SKIP_SAVE'},
     )
     ignore_inner: bpy.props.BoolProperty(
         name="Ignore Inner",
@@ -1545,7 +1554,8 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         column.prop(self, "cutoff")
         layout.separator()
         column = layout.column()
-        column.prop(self, "pixel_error")
+        if self.fill_mode != 'GRID':
+            column.prop(self, "pixel_error")
         column.prop(self, "inset")
         column.prop(self, "min_size")
         column.prop(self, "ignore_inner")
@@ -1734,7 +1744,12 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
             area = _hp_loop_area(loop)
             if abs(area) < min_area:
                 continue   # speck island or pinhole: not worth geometry
-            simplified = hp_simplify_loop(loop, self.pixel_error)
+            # Grid mode only uses the simplified outline as a snap target,
+            # so a large Pixel Error just drags corners away from where the
+            # mask says the shape is. Pin it to 1.0 there; the slider is
+            # for Triangles mode (and hidden otherwise).
+            error = self.pixel_error if self.fill_mode != 'GRID' else 1.0
+            simplified = hp_simplify_loop(loop, error)
             if len(simplified) < 3:
                 continue
             if area > 0.0:
@@ -1817,22 +1832,23 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
                                                         float(key[1])])
                         face_corners.append(keys)
 
-                # Snap corners onto this island's outline. Outside corners
-                # come in from up to 1.5 cells away (but only when the
-                # outline is nearby, so a corner over a filled pinhole
-                # stays put). Inside corners hugging the outline snap out
-                # to it too - without this the rim zigzags on thin stems -
-                # but only from 0.35 cells, so a corner in the middle of a
-                # stem about one cell wide is left alone.
+                # Snap corners that sit outside this island onto its own
+                # outline - and only when it is nearby, so a corner over a
+                # filled pinhole stays put instead of shooting off.
+                #
+                # Outside corners ONLY. 1.26 also snapped inside corners
+                # and added outline midpoints; more moving verts meant more
+                # crossings, and 1.27's cull of the resulting debris then
+                # shredded the mesh into fragments (Separate Islands turned
+                # them all into objects). Azusa: the pre-1.26 rim was the
+                # cleanest. She was right - this is that rim.
                 for (gx, gy), pos in corner_pos.items():
                     sample_x = min(int(gx), width - 1)
                     sample_y = min(int(gy), height - 1)
                     if island[sample_y, sample_x]:
-                        reach = cell * 0.35
-                    else:
-                        reach = snap_max
+                        continue
                     hit = _hp_closest_on_loops((pos[0], pos[1]),
-                                               snap_loops[index], reach)
+                                               snap_loops[index], snap_max)
                     if hit is not None:
                         pos[0], pos[1] = hit
 
@@ -1847,50 +1863,6 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
                     except ValueError:
                         pass   # collapsed by snapping; skip
 
-            if not bm.faces:
-                bm.free()
-                self.report({'WARNING'}, "Grid came out empty - lower "
-                                         "Grid Size.")
-                return {'CANCELLED'}
-
-            # Tighten the rim. Snapped corners are on the outline, but the
-            # straight edge between them still cuts across curves - most
-            # visible on stems. Split every rim edge once and pull the new
-            # midpoint onto the outline as well, halving the error. Rim
-            # cells become 5-gons; the interior stays pure quads.
-            before_verts = set(bm.verts)
-            rim_edges = [e for e in bm.edges if len(e.link_faces) == 1]
-            if rim_edges:
-                bmesh.ops.subdivide_edges(bm, edges=rim_edges, cuts=1)
-                loc_span_x = (x1 - x0) or 1.0
-                loc_span_y = (y1 - y0) or 1.0
-                for vert in bm.verts:
-                    if vert in before_verts:
-                        continue
-                    pix_x = (vert.co.x - x0) / loc_span_x * width
-                    pix_y = (vert.co.y - y0) / loc_span_y * height
-                    # Midpoints start on their own island's rim, so the
-                    # nearest outline within reach is the right one.
-                    hit = _hp_closest_on_loops((pix_x, pix_y), kept,
-                                               cell * 0.6)
-                    if hit is not None:
-                        vert.co.x = x0 + (hit[0] / width) * (x1 - x0)
-                        vert.co.y = y0 + (hit[1] / height) * (y1 - y0)
-
-            # Snapping leaves debris on the rim: stacked verts, sliver
-            # faces, and crossed bow-tie faces that render as flipped
-            # normals - the bits that had to be deleted by hand. Weld the
-            # stacks, then cull anything tiny or not facing up (every
-            # honest face here is flat CCW in the XY plane, normal +Z).
-            cell_local = (cell / width) * ((x1 - x0) or 1.0)
-            bmesh.ops.remove_doubles(bm, verts=bm.verts[:],
-                                     dist=abs(cell_local) * 0.05)
-            bm.normal_update()
-            sliver = abs(cell_local * cell_local) * 0.02
-            debris = [face for face in bm.faces
-                      if face.calc_area() < sliver or face.normal.z < 0.9]
-            if debris:
-                bmesh.ops.delete(bm, geom=debris, context='FACES')
             if not bm.faces:
                 bm.free()
                 self.report({'WARNING'}, "Grid came out empty - lower "

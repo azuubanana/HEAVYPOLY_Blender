@@ -232,12 +232,17 @@ English so that tutorials and error messages are searchable.
   Separate Islands checkbox in the redo panel splits pieces with per-piece
   origins. Cut Out cannot run on an already-separated piece — it always
   rebuilds from the whole image; that is why the option lives inside it.
-  1.26.0: rim tightening — inside corners within 0.35 cells snap to the
-  outline too, and rim edges get a subdivided midpoint pulled onto the
-  outline (rim cells become 5-gons, interior stays pure quads).
-  1.27.0: snapping debris (stacked verts, slivers, crossed bow-tie faces
-  that rendered as flipped normals) is welded/culled automatically, and a
-  Show Wireframe option turns on the object's wire display for tuning.
+  1.26.0–1.27.0 tried to tighten the grid rim (inside-corner snapping,
+  outline midpoints, debris culling) and **made it worse**: more moving
+  verts meant more crossings and flipped faces, and culling the debris
+  disconnected the mesh, which Separate Islands then turned into a pile of
+  objects. 1.28.0 rolled the rim back to the 1.25 behaviour Azusa preferred
+  (outside-corner snap only). Lesson: on soft-brushed outlines, every extra
+  vertex you move is a new chance to self-intersect — keep the snapping
+  minimal and let the texture's alpha hide the rest. 1.27.0's Show
+  Wireframe option survived the rollback. Pixel Error is Triangles-only
+  since 1.28.0 (in grid mode it only degraded the snap targets), and the
+  tuning props are SKIP_SAVE so experiments don't leak into the next run.
 
 **Backspace-to-reset does not work in redo panels.** Azusa hit this tuning
 the cut-out: hovering a value in the F9 panel and pressing Backspace does

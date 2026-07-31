@@ -303,6 +303,14 @@ def _install_startup_file(report=None):
 # Newest first. Shown once after an update. Keep the lines short - the
 # popup does not wrap text. English only, per "No Japanese in the UI".
 WHATS_NEW = (
+    ("1.28.0", (
+        "Grid fill rolled back to the clean 1.25 rim - the 1.26/",
+        "1.27 'improvements' caused flipped faces, rim debris and",
+        "exploding object counts. Sorry about those.",
+        "Pixel Error now only applies to Triangles fill.",
+        "Tuning values (Cutoff, Inset, Min Size...) reset on every",
+        "fresh run instead of silently carrying over.",
+    )),
     ("1.27.0", (
         "Grid fill cleans up after itself: stacked rim verts are",
         "welded, slivers and flipped bow-tie faces removed - the",

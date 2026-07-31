@@ -329,6 +329,11 @@ class HP_OT_gp_select_linked_pick(bpy.types.Operator):
 
     extend: bpy.props.BoolProperty(name="Extend", default=False)
 
+    @classmethod
+    def poll(cls, context):
+        # Belt and braces: never swallow the event outside Grease Pencil edit.
+        return context.mode in {'EDIT_GREASE_PENCIL', 'EDIT_GPENCIL'}
+
     def invoke(self, context, event):
         # Grease Pencil has no *_pick variant of select_linked, so do it in two
         # steps: grab the point under the cursor, then grow to its whole stroke.

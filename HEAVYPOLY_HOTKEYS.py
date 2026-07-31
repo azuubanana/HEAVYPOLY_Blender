@@ -289,10 +289,11 @@ def Keymap_Heavypoly():
 # ---------------------------------------------------------------- 5.x additions
 
 # Grease Pencil keymap names moved around in 4.3 (GPv3). Try every spelling.
+# NOT "Grease Pencil" - that one is the annotation keymap and is live in the
+# 3D View in every mode, so a double click registered there ate the mesh one.
 GP_EDIT_KEYMAPS = (
     "Grease Pencil Edit Mode",
     "Grease Pencil Stroke Edit Mode",
-    "Grease Pencil",
 )
 GP_PAINT_KEYMAPS = (
     "Grease Pencil Paint Mode",

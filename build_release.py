@@ -33,7 +33,7 @@ PAGES_URL = "https://azuubanana.github.io/HEAVYPOLY_Blender"
 
 # Never ship these inside the add-on zip.
 EXCLUDE_DIRS = {"docs", ".git", ".github", "__pycache__", ".vscode", ".idea"}
-EXCLUDE_FILES = {"build_release.py", ".gitignore", ".DS_Store"}
+EXCLUDE_FILES = {"build_release.py", "CLAUDE.md", ".gitignore", ".DS_Store"}
 EXCLUDE_SUFFIXES = (".zip", ".pyc")
 
 

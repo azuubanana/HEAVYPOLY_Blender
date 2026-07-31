@@ -303,6 +303,12 @@ def _install_startup_file(report=None):
 # Newest first. Shown once after an update. Keep the lines short - the
 # popup does not wrap text. English only, per "No Japanese in the UI".
 WHATS_NEW = (
+    ("1.25.0", (
+        "Cut Out to Mesh: Grid fill is now built per piece, so",
+        "nearby leaves no longer get webbed together.",
+        "New Separate Islands checkbox right in the cut-out redo",
+        "panel - pieces split off with per-piece origins in one go.",
+    )),
     ("1.24.0", (
         "Cut Out to Mesh: new Fill option. Triangles (default) for",
         "flat cards, or Grid (Quads) for pieces you will bend,",

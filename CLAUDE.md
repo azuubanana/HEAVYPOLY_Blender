@@ -226,6 +226,12 @@ English so that tutorials and error messages are searchable.
   added Fill = Grid (Quads): integral-image cell coverage, rim corners
   snapped to the traced outline (only within 1.5 cells, so filled pinholes
   don't yank verts to the silhouette) — for pieces that get animated.
+  1.25.0: the grid is built PER ISLAND (one shared grid webbed neighbouring
+  leaves together — cells touching two islands bridged them), pixels are
+  labelled by island via point-in-polygon against the raw outlines, and a
+  Separate Islands checkbox in the redo panel splits pieces with per-piece
+  origins. Cut Out cannot run on an already-separated piece — it always
+  rebuilds from the whole image; that is why the option lives inside it.
 - **N-panel tab.** Confirmed working (1.20.x): `HP Tools` sidebar tab
   (`HEAVYPOLY_panel_tools.py`). 1.21.0 added `Separate Islands` and
   `Copy Diagnostic Report` (runs HP_Check, clipboard) plus a What's New

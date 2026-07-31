@@ -1365,6 +1365,34 @@ def _hp_loop_area(points):
     return 0.5 * area
 
 
+def _hp_point_in_poly(px, py, poly):
+    """Crossing-number test for one point."""
+    inside = False
+    count = len(poly)
+    for i in range(count):
+        ax, ay = poly[i]
+        bx, by = poly[(i + 1) % count]
+        if (ay > py) != (by > py):
+            cross_x = ax + (py - ay) * (bx - ax) / (by - ay)
+            if px < cross_x:
+                inside = not inside
+    return inside
+
+
+def _hp_points_in_poly_np(px, py, poly, np):
+    """Vectorised crossing-number test for many points at once."""
+    inside = np.zeros(px.shape[0], dtype=bool)
+    count = len(poly)
+    for i in range(count):
+        ax, ay = poly[i]
+        bx, by = poly[(i + 1) % count]
+        crosses = (ay > py) != (by > py)
+        denom = (by - ay) or 1.0
+        cross_x = ax + (py - ay) * (bx - ax) / denom
+        inside ^= crosses & (px < cross_x)
+    return inside
+
+
 def _hp_closest_on_loops(point, loops, max_dist):
     """Closest point on any loop's polyline, or None beyond max_dist."""
     best_d2 = max_dist * max_dist
@@ -1482,6 +1510,12 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         description="Add a Solidify modifier with this thickness; 0 removes it",
         default=0.0, min=0.0, max=10.0, subtype='DISTANCE',
     )
+    separate: bpy.props.BoolProperty(
+        name="Separate Islands",
+        description="Split each piece into its own object afterwards, "
+                    "with the origin placed per piece",
+        default=False,
+    )
     # Original flat bounds and location of the mesh, captured on invoke so
     # that dragging the redo sliders keeps mapping onto the same rectangle
     # even though the mesh itself has already been replaced.
@@ -1516,6 +1550,7 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
             column.prop(self, "grid_size")
         column.prop(self, "origin")
         column.prop(self, "thickness")
+        column.prop(self, "separate")
 
     @staticmethod
     def _mesh_rect(obj):
@@ -1686,25 +1721,27 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
             return {'CANCELLED'}
 
         islands = holes = 0
-        kept = []
+        entries = []   # (signed area, raw loop, simplified loop)
         min_area = self.min_size * self.min_size
         for loop in loops:
             area = _hp_loop_area(loop)
             if abs(area) < min_area:
                 continue   # speck island or pinhole: not worth geometry
+            simplified = hp_simplify_loop(loop, self.pixel_error)
+            if len(simplified) < 3:
+                continue
             if area > 0.0:
                 islands += 1
             else:
                 if self.ignore_inner:
                     continue
                 holes += 1
-            simplified = hp_simplify_loop(loop, self.pixel_error)
-            if len(simplified) >= 3:
-                kept.append(simplified)
+            entries.append((area, loop, simplified))
 
-        if not kept:
+        if not entries:
             self.report({'WARNING'}, "Outline vanished - lower Pixel Error.")
             return {'CANCELLED'}
+        kept = [entry[2] for entry in entries]
 
         if not self.rect_valid:
             self.rect = self._mesh_rect(obj)
@@ -1719,49 +1756,84 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
             # Even quads inside; rim corners that fall outside the shape
             # snap onto the traced outline. Quads bend and subdivide the
             # way triangles never do - this mode exists for animation.
+            #
+            # One grid PER ISLAND, not one for the whole image. A shared
+            # grid webbed neighbouring leaves together: a cell touching two
+            # islands bridged them, and its corners snapped to whichever
+            # outline happened to be closer.
             cell = max(2, int(round(self.grid_size)))
-            integral = np.zeros((height + 1, width + 1), dtype=np.int64)
-            integral[1:, 1:] = binary.cumsum(0).cumsum(1)
+            outer_entries = [e for e in entries if e[0] > 0]
+            hole_entries = [e for e in entries if e[0] <= 0]
 
-            corner_pos = {}    # (x, y) grid corner -> [x, y], maybe snapped
-            face_corners = []
-            for cy0 in range(0, height, cell):
-                cy1 = min(cy0 + cell, height)
-                for cx0 in range(0, width, cell):
-                    cx1 = min(cx0 + cell, width)
-                    covered = (integral[cy1, cx1] - integral[cy0, cx1]
-                               - integral[cy1, cx0] + integral[cy0, cx0])
-                    if covered == 0:
-                        continue
-                    keys = ((cx0, cy0), (cx1, cy0), (cx1, cy1), (cx0, cy1))
-                    for key in keys:
-                        corner_pos.setdefault(key, [float(key[0]),
-                                                    float(key[1])])
-                    face_corners.append(keys)
+            # Label every foreground pixel with its island, using the raw
+            # (unsimplified) outlines so the boundary is exact.
+            rows_idx, cols_idx = np.nonzero(binary)
+            centers_x = cols_idx.astype(np.float32) + 0.5
+            centers_y = rows_idx.astype(np.float32) + 0.5
+            label = np.full(binary.shape, -1, dtype=np.int32)
+            claimed = np.zeros(centers_x.shape[0], dtype=bool)
+            for index, (_, raw, _) in enumerate(outer_entries):
+                inside = (_hp_points_in_poly_np(centers_x, centers_y,
+                                                raw, np) & ~claimed)
+                label[rows_idx[inside], cols_idx[inside]] = index
+                claimed |= inside
 
-            # Snap only nearby background corners; a corner floating over a
-            # filled pinhole is far from every kept outline and must stay
-            # put rather than shoot off to the silhouette.
+            # Snap targets per island: its outline plus the holes in it.
+            snap_loops = [[e[2]] for e in outer_entries]
+            for _, raw, simplified in hole_entries:
+                hole_x, hole_y = raw[0]
+                for index, (_, raw_outer, _) in enumerate(outer_entries):
+                    if _hp_point_in_poly(hole_x, hole_y, raw_outer):
+                        snap_loops[index].append(simplified)
+                        break
+
             snap_max = cell * 1.5
-            for (gx, gy), pos in corner_pos.items():
-                sample_x = min(int(gx), width - 1)
-                sample_y = min(int(gy), height - 1)
-                if binary[sample_y, sample_x]:
-                    continue
-                hit = _hp_closest_on_loops((pos[0], pos[1]), kept, snap_max)
-                if hit is not None:
-                    pos[0], pos[1] = hit
+            for index in range(len(outer_entries)):
+                island = label == index
+                integral = np.zeros((height + 1, width + 1), dtype=np.int64)
+                integral[1:, 1:] = island.cumsum(0).cumsum(1)
 
-            vert_of = {}
-            for key, pos in corner_pos.items():
-                vert_of[key] = bm.verts.new(
-                    (x0 + (pos[0] / width) * (x1 - x0),
-                     y0 + (pos[1] / height) * (y1 - y0), 0.0))
-            for keys in face_corners:
-                try:
-                    bm.faces.new([vert_of[key] for key in keys])
-                except ValueError:
-                    pass   # collapsed by snapping; skip
+                corner_pos = {}   # per island, so islands never share verts
+                face_corners = []
+                for cy0 in range(0, height, cell):
+                    cy1 = min(cy0 + cell, height)
+                    for cx0 in range(0, width, cell):
+                        cx1 = min(cx0 + cell, width)
+                        covered = (integral[cy1, cx1] - integral[cy0, cx1]
+                                   - integral[cy1, cx0] + integral[cy0, cx0])
+                        if covered == 0:
+                            continue
+                        keys = ((cx0, cy0), (cx1, cy0),
+                                (cx1, cy1), (cx0, cy1))
+                        for key in keys:
+                            corner_pos.setdefault(key, [float(key[0]),
+                                                        float(key[1])])
+                        face_corners.append(keys)
+
+                # Snap corners that sit outside this island onto its own
+                # outline - and only when it is nearby, so a corner over a
+                # filled pinhole stays put instead of shooting off.
+                for (gx, gy), pos in corner_pos.items():
+                    sample_x = min(int(gx), width - 1)
+                    sample_y = min(int(gy), height - 1)
+                    if island[sample_y, sample_x]:
+                        continue
+                    hit = _hp_closest_on_loops((pos[0], pos[1]),
+                                               snap_loops[index], snap_max)
+                    if hit is not None:
+                        pos[0], pos[1] = hit
+
+                vert_of = {}
+                for key, pos in corner_pos.items():
+                    vert_of[key] = bm.verts.new(
+                        (x0 + (pos[0] / width) * (x1 - x0),
+                         y0 + (pos[1] / height) * (y1 - y0), 0.0))
+                for keys in face_corners:
+                    try:
+                        bm.faces.new([vert_of[key] for key in keys])
+                    except ValueError:
+                        pass   # collapsed by snapping; skip
+
             if not bm.faces:
                 bm.free()
                 self.report({'WARNING'}, "Grid came out empty - lower "
@@ -1846,8 +1918,18 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         elif modifier is not None:
             obj.modifiers.remove(modifier)
 
+        vert_count = len(obj.data.vertices)
+
+        # Optionally hand the pieces straight to Separate Islands, reusing
+        # this operator's Origin choice for every piece.
+        if self.separate and islands > 1:
+            try:
+                bpy.ops.object.hp_separate_islands(origin=self.origin)
+            except Exception as e:
+                print("[HEAVYPOLY] separate after cut-out failed: %r" % (e,))
+
         self.report({'INFO'}, "Cut out %d island(s), %d hole(s), %d verts."
-                    % (islands, holes, len(obj.data.vertices)))
+                    % (islands, holes, vert_count))
         return {'FINISHED'}
 
 

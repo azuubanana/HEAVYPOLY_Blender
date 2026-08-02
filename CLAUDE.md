@@ -119,6 +119,13 @@ duplicate workspaces. `register()` now clears `addon_keymaps` first.
 but does not call `unregister()`, so re-enabling fails with "already registered
 as a subclass". `register()` now calls `unregister()` on its own exception.
 
+**An in-place extension update can leave a half-registered state.** After
+updating 1.27→1.28 the preferences section vanished and Ctrl+Space went
+dead; the code was fine — a restart fixed everything. The update reloads
+modules in a live session, and sometimes that lands halfway. First response
+to "something broke right after an update" is always: restart Blender,
+then diagnose.
+
 ### Keymap conflicts — the recurring one
 
 HEAVYPOLY binds over Blender's defaults but does not always remove them. When

@@ -265,6 +265,14 @@ the auto values (channel, background, cutoff) from the image.
   both keyconfigs) works — she confirmed Tab toggles subdiv on the first
   press. Side effect: the disable reads as a user edit, see
   `INTENTIONAL_DISABLES` in `HEAVYPOLY_setup.py`.
+- **Tutorial-recording mode.** Azusa's idea (July 2026): one toggle that
+  preps Blender for recording a tutorial — big visible mouse pointer, keys
+  on screen. 1.29.0 shipped the ingredients (Screencast Keys helper button,
+  save reminder); the giant-pointer part is NOT solved: Blender cannot
+  resize the OS cursor, so the honest options are the OS accessibility
+  setting (recommended to her) or a custom modal overlay that follows the
+  mouse (fragile, only draws inside its own area — do not attempt casually,
+  see the 1.26/1.27 lesson). Never bundle Screencast Keys itself: GPL.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

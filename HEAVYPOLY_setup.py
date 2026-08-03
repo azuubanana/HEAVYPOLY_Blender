@@ -10,10 +10,12 @@ normal way when the add-on is enabled.
 import os
 import re
 import shutil
+import time
 
 import bpy
+from bpy.app.handlers import persistent
 from bpy.types import Operator, AddonPreferences
-from bpy.props import BoolProperty, StringProperty
+from bpy.props import BoolProperty, IntProperty, StringProperty
 
 
 WORKSPACE_PREFIX = "HP "
@@ -298,11 +300,59 @@ def _install_startup_file(report=None):
         return False
 
 
+# ---------------------------------------------------------------- reminders
+
+
+_save_state = {"last_save": 0.0, "last_nag": 0.0}
+
+
+@persistent
+def _hp_on_save(*_args):
+    _save_state["last_save"] = time.time()
+    _save_state["last_nag"] = 0.0
+
+
+@persistent
+def _hp_on_load(*_args):
+    _save_state["last_save"] = time.time()
+    _save_state["last_nag"] = 0.0
+
+
+def _save_reminder_tick():
+    """Nag about unsaved work. Checks every half minute, forever."""
+    prefs = _prefs()
+    if prefs is None or not prefs.save_reminder or not bpy.data.is_dirty:
+        return 30.0
+    interval = prefs.save_reminder_minutes * 60.0
+    now = time.time()
+    if now - max(_save_state["last_save"], _save_state["last_nag"]) < interval:
+        return 30.0
+    wm = bpy.context.window_manager
+    if not wm.windows:
+        return 30.0
+    # Nag time. Stamp first so a failure does not retry every tick.
+    _save_state["last_nag"] = now
+    minutes = max(int((now - _save_state["last_save"]) // 60), 1)
+    try:
+        with bpy.context.temp_override(window=wm.windows[0]):
+            bpy.ops.hp.save_reminder('INVOKE_DEFAULT', minutes=minutes)
+    except Exception as e:
+        print("[HEAVYPOLY] save reminder failed: %r" % (e,))
+    return 30.0
+
+
 # ---------------------------------------------------------------- what's new
 
 # Newest first. Shown once after an update. Keep the lines short - the
 # popup does not wrap text. English only, per "No Japanese in the UI".
 WHATS_NEW = (
+    ("1.29.0", (
+        "Save Reminder: a popup when unsaved changes sit for too",
+        "long - OK saves on the spot. Toggle and interval are in",
+        "the add-on preferences and the HP Tools panel.",
+        "Screencast Keys helper: one button enables it if it is",
+        "installed, or opens its download page if not.",
+    )),
     ("1.28.0", (
         "Grid fill rolled back to the clean 1.25 rim - the 1.26/",
         "1.27 'improvements' caused flipped faces, rim debris and",
@@ -849,6 +899,70 @@ class HP_OT_copy_diagnostic(Operator):
         return {'FINISHED'}
 
 
+class HP_OT_save_reminder(Operator):
+    """Reminder that the file has unsaved changes"""
+    bl_idname = "hp.save_reminder"
+    bl_label = "HEAVYPOLY - Save Reminder"
+
+    minutes: IntProperty(default=1, options={'HIDDEN'})
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=340)
+
+    def draw(self, context):
+        col = self.layout.column()
+        if bpy.data.filepath:
+            col.label(text="No save for %d minute(s)." % self.minutes,
+                      icon='ERROR')
+        else:
+            col.label(text="This file has never been saved.", icon='ERROR')
+        col.label(text="OK saves right now. Esc skips this once.")
+
+    def execute(self, context):
+        try:
+            bpy.ops.wm.save_mainfile('INVOKE_DEFAULT')
+        except Exception as e:
+            self.report({'WARNING'}, "Could not save: %r" % (e,))
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class HP_OT_setup_screencast(Operator):
+    """Enable Screencast Keys, or open its download page if not installed.
+
+    Screencast Keys is GPL, so it can never be bundled into this MIT
+    add-on - helping the user install and enable it is as far as we go.
+    """
+    bl_idname = "hp.setup_screencast"
+    bl_label = "Screencast Keys"
+
+    def execute(self, context):
+        import addon_utils
+        enabled = set(bpy.context.preferences.addons.keys())
+        for module in addon_utils.modules():
+            name = module.__name__
+            if name.split(".")[-1] != "screencast_keys":
+                continue
+            if name in enabled:
+                self.report({'INFO'}, "Screencast Keys is already on - "
+                                      "its settings are in the N panel.")
+                return {'FINISHED'}
+            try:
+                addon_utils.enable(name, default_set=True, persistent=True)
+                bpy.ops.wm.save_userpref()
+                self.report({'INFO'}, "Screencast Keys enabled - its "
+                                      "settings are in the N panel.")
+                return {'FINISHED'}
+            except Exception as e:
+                self.report({'WARNING'}, "Could not enable it: %r" % (e,))
+                return {'CANCELLED'}
+        bpy.ops.wm.url_open(
+            url="https://extensions.blender.org/add-ons/screencast-keys/")
+        self.report({'INFO'}, "Opened the Screencast Keys page - press "
+                              "Get Add-on and drop the file onto Blender.")
+        return {'FINISHED'}
+
+
 class HP_OT_setup_whats_new(Operator):
     """What changed in recent HEAVYPOLY updates"""
     bl_idname = "hp.setup_whats_new"
@@ -958,6 +1072,18 @@ class HEAVYPOLY_Preferences(AddonPreferences):
     # from applied_version, which tracks the setup state - closing the popup
     # must not silence the "Apply All to get the new keymap" banner.
     seen_version: StringProperty(default="")
+    save_reminder: BoolProperty(
+        name="Save Reminder",
+        description="Pop up a reminder when unsaved changes sit around "
+                    "for too long",
+        default=True,
+    )
+    save_reminder_minutes: IntProperty(
+        name="Minutes",
+        description="How long unsaved changes may pile up before the "
+                    "reminder appears",
+        default=10, min=1, max=120,
+    )
 
     def draw(self, context):
         layout = self.layout
@@ -991,6 +1117,14 @@ class HEAVYPOLY_Preferences(AddonPreferences):
         # Always reachable, not only right after an update - pressing
         # Apply All used to make the only What's New button vanish.
         box.operator("hp.setup_whats_new", text="What's New", icon='INFO')
+
+        box = layout.box()
+        row = box.row(align=True)
+        row.prop(self, "save_reminder")
+        sub = row.row(align=True)
+        sub.active = self.save_reminder
+        sub.prop(self, "save_reminder_minutes")
+        box.operator("hp.setup_screencast", icon='WINDOW')
 
         col = layout.column()
         col.scale_y = 2.0
@@ -1074,6 +1208,8 @@ classes = (
     HP_OT_setup_restore,
     HP_OT_copy_diagnostic,
     HP_OT_setup_whats_new,
+    HP_OT_save_reminder,
+    HP_OT_setup_screencast,
     HEAVYPOLY_Preferences,
 )
 
@@ -1085,10 +1221,21 @@ def register():
     # Blender is still booting when add-ons register, so defer the dialogs.
     bpy.app.timers.register(_first_run_setup, first_interval=1.0)
     bpy.app.timers.register(_whats_new_popup, first_interval=2.0)
+    if not bpy.app.background:
+        _save_state["last_save"] = time.time()
+        if _hp_on_save not in bpy.app.handlers.save_post:
+            bpy.app.handlers.save_post.append(_hp_on_save)
+        if _hp_on_load not in bpy.app.handlers.load_post:
+            bpy.app.handlers.load_post.append(_hp_on_load)
+        bpy.app.timers.register(_save_reminder_tick, first_interval=60.0)
 
 
 def unregister():
-    for timer in (_first_run_setup, _whats_new_popup):
+    for timer in (_first_run_setup, _whats_new_popup, _save_reminder_tick):
         if bpy.app.timers.is_registered(timer):
             bpy.app.timers.unregister(timer)
+    for handler_list, handler in ((bpy.app.handlers.save_post, _hp_on_save),
+                                  (bpy.app.handlers.load_post, _hp_on_load)):
+        if handler in handler_list:
+            handler_list.remove(handler)
     _unregister_classes()

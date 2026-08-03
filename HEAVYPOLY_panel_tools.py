@@ -40,6 +40,17 @@ class HP_PT_tools(bpy.types.Panel):
         column.operator("hp.copy_diagnostic",
                         text="Copy Diagnostic Report", icon='COPYDOWN')
 
+        layout.separator()
+        column = layout.column(align=True)
+        column.scale_y = 1.5
+        column.label(text="Recording / Teaching", icon='VIEW_CAMERA')
+        column.operator("hp.setup_screencast",
+                        text="Screencast Keys", icon='WINDOW')
+        addon = context.preferences.addons.get(__package__)
+        if addon is not None:
+            column.prop(addon.preferences, "save_reminder",
+                        text="Save Reminder")
+
 
 classes = (
     HP_PT_tools,

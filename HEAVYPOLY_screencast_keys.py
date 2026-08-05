@@ -40,7 +40,7 @@ import time
 
 import bpy
 import blf
-from bpy.props import BoolProperty, EnumProperty
+from bpy.props import BoolProperty, EnumProperty, IntProperty
 
 
 # How long an entry stays on screen after being pressed, how many are kept
@@ -144,14 +144,16 @@ def _draw_callback():
     if not history:
         return
 
-    corner = context.window_manager.hp_screencast_corner
+    wm = context.window_manager
+    corner = wm.hp_screencast_corner
     top_half = corner.startswith('TOP')
     right_half = corner.endswith('RIGHT')
 
+    font_size = wm.hp_screencast_font_size
     margin = 24
-    line_height = 26
+    line_height = int(font_size * 1.45)  # keeps entries from overlapping at any size
     font_id = 0
-    blf.size(font_id, 18)
+    blf.size(font_id, font_size)
 
     now = time.time()
     entries = list(reversed(history))  # newest first, closest to the corner
@@ -261,11 +263,17 @@ def register():
         ),
         default='BOTTOM_LEFT',
     )
+    bpy.types.WindowManager.hp_screencast_font_size = IntProperty(
+        name="Text Size",
+        description="Size of the key overlay text in the 3D View",
+        default=18, min=10, max=48,
+    )
 
 
 def unregister():
     _force_stop()
     _unregister_classes()
+    del bpy.types.WindowManager.hp_screencast_font_size
     del bpy.types.WindowManager.hp_screencast_corner
     del bpy.types.WindowManager.hp_screencast_running
 

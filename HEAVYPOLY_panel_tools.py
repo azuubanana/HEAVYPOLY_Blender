@@ -66,7 +66,9 @@ class HP_PT_tools(bpy.types.Panel):
                         text="Stop Built-in Overlay" if running else "Start Built-in Overlay",
                         icon='PAUSE' if running else 'REC',
                         depress=running)
-        column.prop(wm, "hp_screencast_corner", text="")
+        row = column.row(align=True)
+        row.prop(wm, "hp_screencast_corner", text="")
+        row.prop(wm, "hp_screencast_font_size", text="")
 
         addon = context.preferences.addons.get(__package__)
         if addon is not None:

@@ -26,6 +26,7 @@ from . import HEAVYPOLY_pie_view
 from . import HEAVYPOLY_popup_materials
 from . import HEAVYPOLY_popup_properties
 from . import HEAVYPOLY_popup_render
+from . import HEAVYPOLY_screencast_keys
 from . import HEAVYPOLY_select_through_border
 from . import jmQuickPipe
 from . import HEAVYPOLY_pie_extra
@@ -64,6 +65,7 @@ def register():
         HEAVYPOLY_popup_materials.register()
         HEAVYPOLY_popup_properties.register()
         HEAVYPOLY_popup_render.register()
+        HEAVYPOLY_screencast_keys.register()
         HEAVYPOLY_select_through_border.register()
         jmQuickPipe.register()
         HEAVYPOLY_pie_extra.register()
@@ -111,6 +113,7 @@ def unregister():
         HEAVYPOLY_popup_materials,
         HEAVYPOLY_popup_properties,
         HEAVYPOLY_popup_render,
+        HEAVYPOLY_screencast_keys,
         HEAVYPOLY_select_through_border,
         jmQuickPipe,
         HEAVYPOLY_pie_extra,

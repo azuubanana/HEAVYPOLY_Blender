@@ -63,9 +63,10 @@ That bumps the manifest, builds `docs/heavypoly-<ver>.zip`, hashes it,
 regenerates `docs/index.json`, and deletes the previous zip. **Never hand-edit
 `docs/index.json`** — the hash has to match the archive or installs fail.
 
-A correct build reports **33 files, 0.6 MB** (was 32 before
-`HEAVYPOLY_panel_tools.py` in 1.20.0). If the count or size jumps,
-something that should be excluded got swept in.
+A correct build reports **34 files, 0.6 MB** (was 33 before
+`HEAVYPOLY_screencast_keys.py`, 32 before `HEAVYPOLY_panel_tools.py` in
+1.20.0). If the count or size jumps, something that should be excluded got
+swept in.
 
 Students install by adding this repository URL once:
 
@@ -75,6 +76,50 @@ https://azuubanana.github.io/HEAVYPOLY_Blender/index.json
 
 Blender then handles updates. On first enable the add-on applies itself
 automatically (keymap, preferences, startup file) and opens a new file.
+
+### Beta channel
+
+`python build_release.py 1.20.0 --beta` writes to `docs/beta/` instead —
+`https://azuubanana.github.io/HEAVYPOLY_Blender/beta/index.json`. It never
+touches `blender_manifest.toml`, `README.md` or `docs/index.json` on disk
+(only the copy of the manifest packed inside the beta zip gets the version
+bump), so pushing a beta build can't affect students on the real repository.
+That means a beta push doesn't need the same caution an official release
+does.
+
+```
+python build_release.py 1.20.1 --beta
+git add docs/beta && git commit -m "Beta 1.20.1" && git push
+```
+
+Add the beta URL once in Preferences > Get Extensions > Repositories and
+Blender's normal "Check for Updates" picks up new beta builds — no manual
+zip handling. Bump the version on every beta rebuild, even a small fix, or
+Blender won't see it as an update (it compares version strings, not
+content). Whichever version was last approved on the beta channel is the
+one to build again without `--beta` to promote it to the real release.
+
+Workflow in practice (Azusa's preference, August 2026): she lives on the
+beta channel going forward, testing every iteration from there. Claude
+builds and pushes beta freely, bumping the version each time — that part
+never needs to wait for a go-ahead, since it can't reach students. Only the
+final official push (no `--beta`) needs her explicit "this is legit, ship
+it", since that's the one students actually receive. Source code for a
+feature under beta testing stays on its own branch and is only merged into
+`master` at that final promotion — so `master`'s tracked source doesn't
+carry half-finished work while it's still being tried out.
+
+### The `.git`-in-the-zip trap
+
+`build_release.py` excludes a `.git` *directory*. In a normal clone that's
+enough — but in a **git worktree**, `.git` is a plain text file (a `gitdir:
+...` pointer), not a directory, so the directory-only filter didn't catch it
+and it was silently getting zipped up as a top-level file when a beta build
+was tried from a Claude Code worktree. Both `EXCLUDE_DIRS` and
+`EXCLUDE_FILES` list it now. Found by actually inspecting a test build's
+file list — a reminder that "the file count matches" is a cheaper check
+than it looks, but "open the zip and read the file list" is the one that
+actually catches this class of bug.
 
 ---
 
@@ -259,7 +304,10 @@ the auto values (channel, background, cutoff) from the image.
 - **N-panel tab.** Confirmed working (1.20.x): `HP Tools` sidebar tab
   (`HEAVYPOLY_panel_tools.py`). 1.21.0 added `Separate Islands` and
   `Copy Diagnostic Report` (runs HP_Check, clipboard) plus a What's New
-  popup after updates — those still need verifying.
+  popup after updates — those still need verifying. Can be switched off
+  entirely from Preferences (`enable_hp_tools_panel`, checked in the panel's
+  `poll()`) — added August 2026 so a feature being tried out in the panel
+  doesn't have to be visible to everyone while it's still unverified.
 - **Tab conflict — fixed, confirmed.** The 1.20.0 idname-match disable did
   nothing on Azusa's machine; 1.20.1's `disable_stock_tab()` (match by key,
   both keyconfigs) works — she confirmed Tab toggles subdiv on the first
@@ -272,7 +320,24 @@ the auto values (channel, background, cutoff) from the image.
   resize the OS cursor, so the honest options are the OS accessibility
   setting (recommended to her) or a custom modal overlay that follows the
   mouse (fragile, only draws inside its own area — do not attempt casually,
-  see the 1.26/1.27 lesson). Never bundle Screencast Keys itself: GPL.
+  see the 1.26/1.27 lesson). Never bundle Screencast Keys itself: GPL — that
+  is a licensing mechanic (GPL requires anything it's mixed into to become
+  GPL too), not a call Azusa made personally; don't attribute the reasoning
+  to her in future notes, just state the constraint.
+  **August 2026 — confirmed broken, not just "not yet tried":** Azusa
+  dragged the real Screencast Keys zip onto Blender 5.2.0/windows-x64 and
+  got "The extension dropped was not found in the remote repository" from
+  the `extensions.blender.org` install dialog. The add-on's own
+  `blender_manifest.toml` declares `blender_version_min = "4.2.0"` with no
+  upper bound, so this is `extensions.blender.org`'s own listing rejecting
+  5.2 (an upstream indexing gap), not a bug in HEAVYPOLY or user error.
+  Added `HEAVYPOLY_screencast_keys.py` as a from-scratch, MIT, in-add-on
+  key/mouse overlay (blf-only draw handler + a background modal operator
+  that PASS_THROUGHs every event, so it can't eat a shortcut) as a stopgap
+  next to the existing helper button in the "Recording / Teaching" section —
+  never read the GPL source, see the module's own docstring. Switch back to
+  recommending the real extension once its listing installs cleanly on 5.2
+  again. Unverified in Blender; test via the beta channel before promoting.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

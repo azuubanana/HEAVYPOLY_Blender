@@ -54,9 +54,11 @@ MODIFIER_TYPES = {
     'LEFT_ALT', 'RIGHT_ALT', 'OSKEY',
 }
 MOUSE_LABELS = {
-    'LEFTMOUSE': "Mouse L",
-    'RIGHTMOUSE': "Mouse R",
-    'MIDDLEMOUSE': "Mouse M",
+    # Matches Blender's own manual/tooltip abbreviations, so students see
+    # the same terms here as they do elsewhere in Blender.
+    'LEFTMOUSE': "LMB",
+    'RIGHTMOUSE': "RMB",
+    'MIDDLEMOUSE': "MMB",
 }
 # Events we never want to show, either because they're not a "press" a
 # student made (timers, deactivate) or because scrolling was deliberately

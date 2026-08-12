@@ -20,6 +20,17 @@ from bpy.types import Operator
 from bpy.props import BoolProperty
 from mathutils import Color
 
+
+def is_library_or_override(ob):
+    """True if ob or its data is linked from a library or is a library
+    override (e.g. dropped in from the Asset Browser) — transform_apply
+    raises RuntimeError on these instead of applying."""
+    return bool(
+        ob.library or ob.override_library
+        or (ob.data and (ob.data.library or ob.data.override_library))
+    )
+
+
 class HP_OT_unhide(bpy.types.Operator):
     bl_idname = "mesh.hp_unhide"         # unique identifier for buttons and menu items to reference.
     bl_label = "Unhide and keep selection"       # display name in the interface.
@@ -247,7 +258,8 @@ class HP_OT_SmartScale(Operator):
         modal = False
         try:
             for ob in bpy.context.selected_objects:
-                if ob.mode == 'OBJECT' and ob.children == () and ob.data.users == 1 and ob.type == 'MESH':
+                if (ob.mode == 'OBJECT' and ob.children == () and ob.data.users == 1
+                        and ob.type == 'MESH' and not is_library_or_override(ob)):
                     modal = True
                     print('running modal')
         except:
@@ -260,7 +272,13 @@ class HP_OT_SmartScale(Operator):
     def modal(self, context, event):
         print("MODAL " + event.type)
         if event.type == 'MOUSEMOVE':
-            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+            try:
+                bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+            except RuntimeError as e:
+                # Asset-library / linked / override objects (e.g. dragged in from the
+                # Asset Browser) cannot have their scale baked into the mesh.
+                # Leave the scale on the object instead of crashing the modal.
+                print("[HEAVYPOLY] could not apply scale, leaving it on the object: %r" % (e,))
             return {'FINISHED'}
         # if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
         #     print('Applying Scale')
@@ -468,22 +486,22 @@ class HP_OT_Subdivision_Toggle(bpy.types.Operator):
             if o.type not in supported:
                 continue
             bpy.context.view_layer.objects.active = o
-            if 0 < len([m for m in bpy.context.object.modifiers if m.type == "SUBSURF"]):
-                if bpy.context.object.modifiers["Subsurf_Base"].show_viewport == False:
-                    bpy.context.object.modifiers["Subsurf_Base"].show_render = True
-                    bpy.context.object.modifiers["Subsurf_Base"].show_viewport = True
-                else:
-                    bpy.context.object.modifiers["Subsurf_Base"].show_render = False
-                    bpy.context.object.modifiers["Subsurf_Base"].show_viewport = False
-
+            # Toggle whichever SUBSURF modifier is there, not just one named
+            # "Subsurf_Base" — the user may have added their own.
+            subsurf = next((m for m in o.modifiers if m.type == "SUBSURF"), None)
+            if subsurf is not None:
+                show = not subsurf.show_viewport
+                subsurf.show_render = show
+                subsurf.show_viewport = show
+                print(f"[HEAVYPOLY] Subdivision toggle: {o.name}.{subsurf.name} -> {'on' if show else 'off'}")
             else:
-                o.modifiers.new("Subsurf_Base", "SUBSURF")
-                bpy.context.object.modifiers["Subsurf_Base"].name = "Subsurf_Base"
-                bpy.context.object.modifiers["Subsurf_Base"].render_levels = 3
-                bpy.context.object.modifiers["Subsurf_Base"].levels = 3
-                bpy.context.object.modifiers["Subsurf_Base"].show_in_editmode = True
-                bpy.context.object.modifiers["Subsurf_Base"].show_on_cage = False
-                bpy.context.object.modifiers["Subsurf_Base"].subdivision_type = 'CATMULL_CLARK'
+                subsurf = o.modifiers.new("Subsurf_Base", "SUBSURF")
+                subsurf.render_levels = 3
+                subsurf.levels = 3
+                subsurf.show_in_editmode = True
+                subsurf.show_on_cage = False
+                subsurf.subdivision_type = 'CATMULL_CLARK'
+                print(f"[HEAVYPOLY] Subdivision toggle: added {subsurf.name} to {o.name}")
 
         return {'FINISHED'}
 

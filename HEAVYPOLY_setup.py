@@ -1084,6 +1084,11 @@ class HEAVYPOLY_Preferences(AddonPreferences):
                     "reminder appears",
         default=10, min=1, max=120,
     )
+    enable_hp_tools_panel: BoolProperty(
+        name="HP Tools Panel",
+        description="Show the HP Tools tab in the 3D View sidebar (press N)",
+        default=True,
+    )
 
     def draw(self, context):
         layout = self.layout
@@ -1125,6 +1130,7 @@ class HEAVYPOLY_Preferences(AddonPreferences):
         sub.active = self.save_reminder
         sub.prop(self, "save_reminder_minutes")
         box.operator("hp.setup_screencast", icon='WINDOW')
+        box.prop(self, "enable_hp_tools_panel")
 
         col = layout.column()
         col.scale_y = 2.0

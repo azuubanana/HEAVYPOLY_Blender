@@ -7,6 +7,10 @@ clipboard-image tools, with room for more as they arrive.
 The buttons grey themselves out when their operator's poll fails (for example
 Key Out Background needs something selected), so the panel stays visible in
 every mode and tells the user why a command is unavailable rather than hiding.
+
+The whole panel can be switched off from Preferences (enable_hp_tools_panel)
+so it doesn't have to always be there while something in it is still being
+tried out — see HEAVYPOLY_setup.py.
 """
 
 import bpy
@@ -17,6 +21,13 @@ class HP_PT_tools(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "HP Tools"
+
+    @classmethod
+    def poll(cls, context):
+        addon = context.preferences.addons.get(__package__)
+        if addon is None:
+            return True  # preferences not registered yet; fail open
+        return addon.preferences.enable_hp_tools_panel
 
     def draw(self, context):
         layout = self.layout
@@ -45,7 +56,20 @@ class HP_PT_tools(bpy.types.Panel):
         column.scale_y = 1.5
         column.label(text="Recording / Teaching", icon='VIEW_CAMERA')
         column.operator("hp.setup_screencast",
-                        text="Screencast Keys", icon='WINDOW')
+                        text="Screencast Keys (Official Add-on)", icon='WINDOW')
+
+        # Stopgap for as long as the official add-on's extensions.blender.org
+        # listing rejects Blender 5.2 installs - see HEAVYPOLY_screencast_keys.py.
+        wm = context.window_manager
+        running = wm.hp_screencast_running
+        column.operator("view3d.hp_screencast_keys_toggle",
+                        text="Stop Built-in Overlay" if running else "Start Built-in Overlay",
+                        icon='PAUSE' if running else 'REC',
+                        depress=running)
+        row = column.row(align=True)
+        row.prop(wm, "hp_screencast_corner", text="")
+        row.prop(wm, "hp_screencast_font_size", text="")
+
         addon = context.preferences.addons.get(__package__)
         if addon is not None:
             column.prop(addon.preferences, "save_reminder",

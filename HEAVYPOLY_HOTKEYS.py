@@ -697,6 +697,12 @@ def register():
     disable_stock_tab()
 
     disable_specific_kmi('Sculpt', 'paint.brush_select','V','PRESS',False,False,False)
+    # V is HEAVYPOLY's view pie (3D View keymap), but in Edit Mode Blender's
+    # stock Rip (mesh.rip_move) sits on plain V in the Mesh keymap, which is
+    # checked first - so V ripped instead of opening the pie (and in face
+    # select just errored, eating the key). Rip stays available via Alt+V
+    # and the mesh menus.
+    disable_specific_kmi('Mesh', 'mesh.rip_move','V','PRESS',False,False,False)
     
     disable_specific_kmi('3D View Tool: Select Box', 'view3d.select_box','LEFTMOUSE','CLICK_DRAG',False,False,False)
     disable_specific_kmi('3D View Tool: Select Box', 'view3d.select_box','LEFTMOUSE','CLICK_DRAG',True,False,False)

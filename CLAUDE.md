@@ -185,6 +185,7 @@ Found and fixed so far:
 | `Ctrl+Shift+X` (paint modes) | `paint.sample_color` | Symmetry toggle never reached |
 | `Space` (Transform Modal) | `CONFIRM` | Y-axis lock impossible |
 | `Tab` (Object Non-modal) | `object.editmode_toggle` | First press entered Edit Mode (making the Outliner's mode-dot column appear); subdiv toggle only fired from the second press. Object Non-modal is checked before the generic 3D View keymap, but after Mesh — hence the press-count asymmetry |
+| `Shift+X` (Object Mode) | `object.delete` (the delete-globally copy) | Delete confirmation dialog instead of the symmetry pie — in Object Mode only, since the pie lives in the later-checked 3D View keymap. `disable_default_kmi` missed it twice over: it stops at the first `object.delete` match and never touches `keyconfigs.user`. Fixed by `disable_stock_delete()` (both keyconfigs, both X variants), same recipe as Tab |
 
 **How to diagnose:** Preferences > Keymap, `Key-Binding` tab, type the chord.
 Entries under *different* keymaps (Mesh vs Sculpt vs 3D View) are fine — those

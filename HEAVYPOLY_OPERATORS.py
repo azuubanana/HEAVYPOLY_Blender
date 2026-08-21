@@ -2019,6 +2019,11 @@ class HP_OT_random_island_colors(bpy.types.Operator):
         name="Add Material If Missing", default=True,
         description="If the object has no material, add a shared one that "
                     "reads the color attribute, so EEVEE renders the colors")
+    connect_materials: bpy.props.BoolProperty(
+        name="Connect In Materials", default=True,
+        description="Add a Color Attribute node to the object's existing "
+                    "materials and plug it into Base Color, replacing "
+                    "whatever fed Base Color before (undo restores it)")
 
     @classmethod
     def poll(cls, context):
@@ -2076,6 +2081,36 @@ class HP_OT_random_island_colors(bpy.types.Operator):
                   "Color Attribute node left unlinked")
         return mat
 
+    def _wire_into_material(self, mat):
+        """Drop a Color Attribute node into mat and feed Base Color with it.
+
+        Idempotent: re-running finds the node it made last time instead of
+        stacking copies. Returns True when the material now reads the
+        attribute.
+        """
+        if mat is None:
+            return False
+        if not mat.use_nodes:
+            mat.use_nodes = True
+        tree = mat.node_tree
+        bsdf = next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'),
+                    None)
+        if bsdf is None:
+            print("[HEAVYPOLY] material '%s' has no Principled BSDF - "
+                  "not connecting island colors" % mat.name)
+            return False
+        attr = next((n for n in tree.nodes
+                     if n.type == 'VERTEX_COLOR'
+                     and n.layer_name == self.ATTRIBUTE), None)
+        if attr is None:
+            attr = tree.nodes.new('ShaderNodeVertexColor')
+            attr.layer_name = self.ATTRIBUTE
+            attr.location = (bsdf.location.x - 250.0, bsdf.location.y)
+        base = bsdf.inputs['Base Color']
+        if not any(link.from_node is attr for link in base.links):
+            tree.links.new(attr.outputs['Color'], base)
+        return True
+
     def execute(self, context):
         meshes = [o for o in context.selected_objects
                   if o.type == 'MESH' and len(o.data.vertices)]
@@ -2088,6 +2123,7 @@ class HP_OT_random_island_colors(bpy.types.Operator):
             return {'CANCELLED'}
 
         total_islands = 0
+        wired = 0
         for obj_index, obj in enumerate(sorted(meshes, key=lambda o: o.name)):
             mesh = obj.data
             indices, count = self._island_index_per_vertex(mesh)
@@ -2124,13 +2160,26 @@ class HP_OT_random_island_colors(bpy.types.Operator):
             mesh.color_attributes.active_color = attr
             mesh.update()
 
-            if self.add_material and len(obj.data.materials) == 0:
-                try:
-                    obj.data.materials.append(
-                        self._material_with_attribute_node())
-                except Exception as e:
-                    print("[HEAVYPOLY] adding island-color material "
-                          "failed: %r" % (e,))
+            if len(obj.data.materials) == 0:
+                if self.add_material:
+                    try:
+                        obj.data.materials.append(
+                            self._material_with_attribute_node())
+                        wired += 1
+                    except Exception as e:
+                        print("[HEAVYPOLY] adding island-color material "
+                              "failed: %r" % (e,))
+            elif self.connect_materials:
+                # The object already has materials: put the Color Attribute
+                # node straight into them so the colors show up in the
+                # Shader Editor and in EEVEE without any manual wiring.
+                for mat in obj.data.materials:
+                    try:
+                        if self._wire_into_material(mat):
+                            wired += 1
+                    except Exception as e:
+                        print("[HEAVYPOLY] wiring island colors into "
+                              "material failed: %r" % (e,))
 
         space = context.space_data
         if self.show_solid and space is not None and space.type == 'VIEW_3D' \
@@ -2138,8 +2187,9 @@ class HP_OT_random_island_colors(bpy.types.Operator):
             space.shading.color_type = 'VERTEX'
 
         self.report({'INFO'},
-                    "Colored %d island(s) in %d object(s) -> attribute '%s'."
-                    % (total_islands, len(meshes), self.ATTRIBUTE))
+                    "Colored %d island(s) in %d object(s), wired %d "
+                    "material(s) -> attribute '%s'."
+                    % (total_islands, len(meshes), wired, self.ATTRIBUTE))
         return {'FINISHED'}
 
 

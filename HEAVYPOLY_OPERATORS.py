@@ -14,6 +14,8 @@ import bpy
 from mathutils import Vector, Matrix
 import math
 import os
+import random
+import colorsys
 import bmesh
 from bpy.types import Menu
 from bpy.types import Operator
@@ -1984,6 +1986,163 @@ class HP_OT_cutout_mesh(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class HP_OT_random_island_colors(bpy.types.Operator):
+    """Give every connected piece of the mesh its own random color.
+
+    EEVEE does not support the shader Geometry node's Random Per Island
+    output (Cycles only, still true in 5.2), so instead of computing the
+    random value at render time we bake a finished color per island into
+    a color attribute. The shader side then only needs a Color Attribute
+    node - or nothing at all in Solid view with Attribute coloring.
+    """
+    bl_idname = "object.hp_random_island_colors"
+    bl_label = "Random Island Colors"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # One fixed attribute of our own: re-running overwrites it, and it never
+    # touches colors the user painted into other attributes by hand.
+    ATTRIBUTE = "Island Colors"
+
+    seed: bpy.props.IntProperty(
+        name="Seed", default=0,
+        description="Change to re-roll all the colors")
+    saturation: bpy.props.FloatProperty(
+        name="Saturation", default=0.75, min=0.0, max=1.0, subtype='FACTOR',
+        description="0 gives grays, 1 gives fully vivid colors")
+    value: bpy.props.FloatProperty(
+        name="Brightness", default=0.9, min=0.0, max=1.0, subtype='FACTOR')
+    show_solid: bpy.props.BoolProperty(
+        name="Show in Solid View", default=True,
+        description="Set the viewport's Solid mode color to Attribute so "
+                    "the result is visible without any material")
+    add_material: bpy.props.BoolProperty(
+        name="Add Material If Missing", default=True,
+        description="If the object has no material, add a shared one that "
+                    "reads the color attribute, so EEVEE renders the colors")
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return context.mode == 'OBJECT' and obj is not None and obj.type == 'MESH'
+
+    @staticmethod
+    def _island_index_per_vertex(mesh):
+        """Union-find over the edges: every vertex gets its island's index.
+
+        Returns (indices, island_count). Loose vertices count as their own
+        islands - harmless, they get a color nothing renders.
+        """
+        parent = list(range(len(mesh.vertices)))
+
+        def find(i):
+            root = i
+            while parent[root] != root:
+                root = parent[root]
+            while parent[i] != root:  # path compression
+                parent[i], i = root, parent[i]
+            return root
+
+        for edge in mesh.edges:
+            a, b = edge.vertices
+            parent[find(a)] = find(b)
+
+        island_of_root = {}
+        indices = [0] * len(mesh.vertices)
+        for i in range(len(mesh.vertices)):
+            root = find(i)
+            if root not in island_of_root:
+                island_of_root[root] = len(island_of_root)
+            indices[i] = island_of_root[root]
+        return indices, len(island_of_root)
+
+    def _material_with_attribute_node(self):
+        """The shared 'HP Island Colors' material, created on first use."""
+        mat = bpy.data.materials.get("HP Island Colors")
+        if mat is not None:
+            return mat
+        mat = bpy.data.materials.new("HP Island Colors")
+        mat.use_nodes = True
+        tree = mat.node_tree
+        bsdf = next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'),
+                    None)
+        # ShaderNodeVertexColor is the Color Attribute node (old idname).
+        attr = tree.nodes.new('ShaderNodeVertexColor')
+        attr.layer_name = self.ATTRIBUTE
+        if bsdf is not None:
+            attr.location = (bsdf.location.x - 250.0, bsdf.location.y)
+            tree.links.new(attr.outputs['Color'], bsdf.inputs['Base Color'])
+        else:
+            print("[HEAVYPOLY] no Principled BSDF in new material - "
+                  "Color Attribute node left unlinked")
+        return mat
+
+    def execute(self, context):
+        meshes = [o for o in context.selected_objects
+                  if o.type == 'MESH' and len(o.data.vertices)]
+        if context.active_object not in meshes:
+            if context.active_object.type == 'MESH' \
+                    and len(context.active_object.data.vertices):
+                meshes.append(context.active_object)
+        if not meshes:
+            self.report({'WARNING'}, "No mesh with any vertices selected.")
+            return {'CANCELLED'}
+
+        total_islands = 0
+        for obj_index, obj in enumerate(sorted(meshes, key=lambda o: o.name)):
+            mesh = obj.data
+            indices, count = self._island_index_per_vertex(mesh)
+            total_islands += count
+
+            # Hues walk the golden ratio from a seeded random start, so even
+            # two islands land far apart on the color wheel instead of both
+            # rolling nearly the same hue.
+            rng = random.Random(self.seed * 1000003 + obj_index)
+            start = rng.random()
+            island_colors = []
+            for i in range(count):
+                hue = (start + i * 0.61803398875) % 1.0
+                island_colors.append(colorsys.hsv_to_rgb(
+                    hue, self.saturation, self.value))
+
+            attr = mesh.color_attributes.get(self.ATTRIBUTE)
+            if attr is not None and (attr.domain != 'POINT'
+                                     or attr.data_type != 'FLOAT_COLOR'):
+                mesh.color_attributes.remove(attr)
+                attr = None
+            if attr is None:
+                attr = mesh.color_attributes.new(
+                    self.ATTRIBUTE, 'FLOAT_COLOR', 'POINT')
+
+            flat = [0.0] * (len(mesh.vertices) * 4)
+            for i, island in enumerate(indices):
+                r, g, b = island_colors[island]
+                flat[i * 4:i * 4 + 4] = (r, g, b, 1.0)
+            attr.data.foreach_set("color", flat)
+
+            # Make it what Attribute shading and new Color Attribute nodes
+            # pick by default.
+            mesh.color_attributes.active_color = attr
+            mesh.update()
+
+            if self.add_material and len(obj.data.materials) == 0:
+                try:
+                    obj.data.materials.append(
+                        self._material_with_attribute_node())
+                except Exception as e:
+                    print("[HEAVYPOLY] adding island-color material "
+                          "failed: %r" % (e,))
+
+        space = context.space_data
+        if self.show_solid and space is not None and space.type == 'VIEW_3D' \
+                and space.shading.type == 'SOLID':
+            space.shading.color_type = 'VERTEX'
+
+        self.report({'INFO'},
+                    "Colored %d island(s) in %d object(s) -> attribute '%s'."
+                    % (total_islands, len(meshes), self.ATTRIBUTE))
+        return {'FINISHED'}
+
+
 class HP_OT_separate_islands(bpy.types.Operator):
     """Split the active mesh into one object per connected piece"""
     bl_idname = "object.hp_separate_islands"
@@ -2064,6 +2223,7 @@ class HP_OT_separate_islands(bpy.types.Operator):
 
 classes = (
     HP_OT_cutout_mesh,
+    HP_OT_random_island_colors,
     HP_OT_separate_islands,
     HP_OT_key_out_background,
     HP_OT_paste_image_plane,

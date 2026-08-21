@@ -47,6 +47,13 @@ class HP_PT_tools(bpy.types.Panel):
         layout.separator()
         column = layout.column(align=True)
         column.scale_y = 1.5
+        column.label(text="Color", icon='COLOR')
+        column.operator("object.hp_random_island_colors",
+                        text="Random Island Colors", icon='GROUP_VCOL')
+
+        layout.separator()
+        column = layout.column(align=True)
+        column.scale_y = 1.5
         column.label(text="Support", icon='QUESTION')
         column.operator("hp.copy_diagnostic",
                         text="Copy Diagnostic Report", icon='COPYDOWN')

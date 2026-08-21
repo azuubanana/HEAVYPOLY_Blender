@@ -2003,6 +2003,14 @@ class HP_OT_random_island_colors(bpy.types.Operator):
     # touches colors the user painted into other attributes by hand.
     ATTRIBUTE = "Island Colors"
 
+    mode: bpy.props.EnumProperty(
+        name="Color Per",
+        description="What gets its own random color",
+        items=[
+            ('ISLAND', "Island", "One color per connected piece"),
+            ('FACE', "Face", "One color per face - flat shading look"),
+        ],
+        default='ISLAND')
     seed: bpy.props.IntProperty(
         name="Seed", default=0,
         description="Change to re-roll all the colors")
@@ -2135,37 +2143,50 @@ class HP_OT_random_island_colors(bpy.types.Operator):
             self.report({'WARNING'}, "No mesh with any vertices selected.")
             return {'CANCELLED'}
 
-        total_islands = 0
+        total = 0
         wired = 0
         for obj_index, obj in enumerate(sorted(meshes, key=lambda o: o.name)):
             mesh = obj.data
-            indices, count = self._island_index_per_vertex(mesh)
-            total_islands += count
+            if self.mode == 'FACE':
+                indices, count = None, len(mesh.polygons)
+            else:
+                indices, count = self._island_index_per_vertex(mesh)
+            total += count
 
             # Hues walk the golden ratio from a seeded random start, so even
             # two islands land far apart on the color wheel instead of both
             # rolling nearly the same hue.
             rng = random.Random(self.seed * 1000003 + obj_index)
             start = rng.random()
-            island_colors = []
+            palette = []
             for i in range(count):
                 hue = (start + i * 0.61803398875) % 1.0
-                island_colors.append(colorsys.hsv_to_rgb(
+                palette.append(colorsys.hsv_to_rgb(
                     hue, self.saturation, self.value))
 
+            # Faces need the corner domain so every face is flat-colored;
+            # islands are constant per piece, so per-vertex is enough.
+            domain = 'CORNER' if self.mode == 'FACE' else 'POINT'
             attr = mesh.color_attributes.get(self.ATTRIBUTE)
-            if attr is not None and (attr.domain != 'POINT'
+            if attr is not None and (attr.domain != domain
                                      or attr.data_type != 'FLOAT_COLOR'):
                 mesh.color_attributes.remove(attr)
                 attr = None
             if attr is None:
                 attr = mesh.color_attributes.new(
-                    self.ATTRIBUTE, 'FLOAT_COLOR', 'POINT')
+                    self.ATTRIBUTE, 'FLOAT_COLOR', domain)
 
-            flat = [0.0] * (len(mesh.vertices) * 4)
-            for i, island in enumerate(indices):
-                r, g, b = island_colors[island]
-                flat[i * 4:i * 4 + 4] = (r, g, b, 1.0)
+            if self.mode == 'FACE':
+                flat = [0.0] * (len(mesh.loops) * 4)
+                for poly in mesh.polygons:
+                    r, g, b = palette[poly.index]
+                    for li in poly.loop_indices:
+                        flat[li * 4:li * 4 + 4] = (r, g, b, 1.0)
+            else:
+                flat = [0.0] * (len(mesh.vertices) * 4)
+                for i, island in enumerate(indices):
+                    r, g, b = palette[island]
+                    flat[i * 4:i * 4 + 4] = (r, g, b, 1.0)
             attr.data.foreach_set("color", flat)
 
             # Make it what Attribute shading and new Color Attribute nodes
@@ -2201,10 +2222,11 @@ class HP_OT_random_island_colors(bpy.types.Operator):
                 and space.shading.type == 'SOLID':
             space.shading.color_type = 'VERTEX'
 
+        noun = "face" if self.mode == 'FACE' else "island"
         self.report({'INFO'},
-                    "Colored %d island(s) in %d object(s), node in %d "
+                    "Colored %d %s(s) in %d object(s), node in %d "
                     "material(s) -> attribute '%s'."
-                    % (total_islands, len(meshes), wired, self.ATTRIBUTE))
+                    % (total, noun, len(meshes), wired, self.ATTRIBUTE))
         return {'FINISHED'}
 
 

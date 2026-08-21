@@ -338,7 +338,12 @@ the auto values (channel, background, cutoff) from the image.
   never read the GPL source, see the module's own docstring. Switch back to
   recommending the real extension once its listing installs cleanly on 5.2
   again. Unverified in Blender; test via the beta channel before promoting.
-- **Random Island Colors.** Beta 1.31.2 (August 2026), unverified. EEVEE
+- **Random Island Colors.** Beta 1.31.3 (August 2026). 1.31.2 confirmed
+  working by Azusa (bake + auto material on bare objects); she then asked
+  for the colors to appear in the Shader Editor without manual wiring, so
+  1.31.3 added Connect In Materials (default on): existing materials get
+  the Color Attribute node dropped in and linked to Principled Base Color,
+  replacing whatever fed it (idempotent — re-runs reuse the node). EEVEE
   still does not support the shader Geometry node's Random Per Island
   output (Cycles only, confirmed against the 5.2 manual), so
   `object.hp_random_island_colors` (HP Tools > Color) bakes a finished

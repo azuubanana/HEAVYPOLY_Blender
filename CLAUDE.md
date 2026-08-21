@@ -338,7 +338,11 @@ the auto values (channel, background, cutoff) from the image.
   never read the GPL source, see the module's own docstring. Switch back to
   recommending the real extension once its listing installs cleanly on 5.2
   again. Unverified in Blender; test via the beta channel before promoting.
-- **Random Island Colors.** Beta 1.31.4 (August 2026). 1.31.2 confirmed
+- **Random Island Colors.** Beta 1.31.5 (August 2026) added Color Per:
+  Island / Face — Face mode writes one flat color per polygon into the
+  same attribute on the `CORNER` domain (the attribute is recreated when
+  the domain changes, so switching modes just overwrites). 1.31.4: 1.31.2
+  confirmed
   working by Azusa (bake + auto material on bare objects); she then asked
   for the node to appear in the Shader Editor by itself. 1.31.3 auto-
   connected it into Base Color; she preferred it merely *placed*, so

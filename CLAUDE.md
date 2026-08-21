@@ -338,6 +338,20 @@ the auto values (channel, background, cutoff) from the image.
   never read the GPL source, see the module's own docstring. Switch back to
   recommending the real extension once its listing installs cleanly on 5.2
   again. Unverified in Blender; test via the beta channel before promoting.
+- **Random Island Colors.** Beta 1.31.2 (August 2026), unverified. EEVEE
+  still does not support the shader Geometry node's Random Per Island
+  output (Cycles only, confirmed against the 5.2 manual), so
+  `object.hp_random_island_colors` (HP Tools > Color) bakes a finished
+  random color per connected island into a `POINT`/`FLOAT_COLOR` color
+  attribute named `Island Colors` — union-find over the edges, hues walked
+  by golden ratio from a seeded start so few-island meshes still get
+  well-separated colors. Redo panel: Seed, Saturation, Brightness, Show in
+  Solid View (flips the viewport to Attribute coloring), Add Material If
+  Missing (shared `HP Island Colors` material: Color Attribute node →
+  Principled Base Color — only added when the object has zero materials).
+  Re-running overwrites only that attribute; hand-painted attributes are
+  untouched. Source lives on `claude/eevee-random-color-per-island-8bcb09`
+  until promotion.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

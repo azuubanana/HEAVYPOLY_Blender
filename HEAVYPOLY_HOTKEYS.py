@@ -616,6 +616,42 @@ def disable_stock_delete(retries=10):
             print("[HEAVYPOLY] no stock object.delete on X found in Object Mode")
 
 
+def disable_stock_maximize(retries=10):
+    """Switch off Blender's Ctrl+Space "Toggle Maximize Area".
+
+    It lives in the Screen keymap, so it is live in every editor. In the
+    3D View HEAVYPOLY's Ctrl+Space select pie wins, but in the Shader
+    Editor, Outliner etc. Ctrl+Space blew the area up to full screen.
+    Maximize is still in the Areas pie (Ctrl+Shift+Alt+Space). Only plain
+    Ctrl+Space is matched; Ctrl+Alt+Space (fullscreen area) is left alone.
+    Same recipe as disable_stock_delete(): both keyconfigs, print what
+    was switched off.
+    """
+    wm = bpy.context.window_manager
+    found = False
+    for kc in (wm.keyconfigs.get('Blender'), wm.keyconfigs.user):
+        if kc is None:
+            continue
+        km = kc.keymaps.get('Screen')
+        if km is None:
+            continue
+        for kmi in km.keymap_items:
+            if (kmi.idname == 'screen.screen_full_area' and kmi.type == 'SPACE'
+                    and kmi.value == 'PRESS' and kmi.ctrl
+                    and not kmi.shift and not kmi.alt and not kmi.oskey):
+                found = True
+                if kmi.active:
+                    kmi.active = False
+                    print("[HEAVYPOLY] disabled screen.screen_full_area on Ctrl+Space (%s / %s)"
+                          % (kc.name, km.name))
+    if not found:
+        if retries > 0:
+            bpy.app.timers.register(lambda: disable_stock_maximize(retries - 1),
+                                    first_interval=0.2)
+        else:
+            print("[HEAVYPOLY] no stock Ctrl+Space maximize found in Screen")
+
+
 def get_active_kmi(space: str, **kwargs) -> bpy.types.KeyMapItem:
     kc = bpy.context.window_manager.keyconfigs.active
     km = kc.keymaps.get(space)
@@ -694,6 +730,8 @@ def register():
     # copy shadowed the symmetry pie (Object Mode is checked before the
     # 3D View keymap). Covers both keyconfigs, unlike disable_default_kmi.
     disable_stock_delete()
+    # Ctrl+Space maximized the area in every editor but the 3D View.
+    disable_stock_maximize()
     disable_default_kmi('Object Mode', 'screen.animation_play')
 
     disable_specific_kmi('Curve', 'transform.translate','LEFTMOUSE','CLICK_DRAG',False,False,False)

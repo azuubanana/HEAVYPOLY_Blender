@@ -250,6 +250,11 @@ def Keymap_Heavypoly():
 #    kmi = km.keymap_items.new('object.select_all', k_select, 'CLICK', ctrl=True)
 #    kmi_props_setattr(kmi.properties, 'action', 'INVERT')
     kmi = km.keymap_items.new('object.hide_view_clear', 'H', 'PRESS', ctrl=True, shift=True)
+    # Stock Alt+H (Show Hidden Objects) is missing from Object Mode on
+    # Azusa's 5.2 install - Key-Binding search shows no Object Mode entry,
+    # while the menu item and a hand-assigned Alt+H both work. Bind it here
+    # so it works out of the box.
+    kmi = km.keymap_items.new('object.hide_view_clear', 'H', 'PRESS', alt=True)
 
 #Sculpt Mode
     km = kc.keymaps.new(name='Sculpt')

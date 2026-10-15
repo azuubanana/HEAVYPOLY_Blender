@@ -7,16 +7,16 @@
       "id": "heavypoly",
       "name": "HEAVYPOLY",
       "tagline": "Pie menus and hotkeys for fast modelling",
-      "version": "1.31.10",
+      "version": "1.31.11",
       "type": "add-on",
       "maintainer": "Vaughan Ling, Julien Gauthier, Azusa Tojo",
       "license": [
         "SPDX:MIT"
       ],
       "blender_version_min": "5.2.0",
-      "archive_url": "./heavypoly-1.31.10.zip",
-      "archive_size": 635041,
-      "archive_hash": "sha256:7e9f9e083425227cfe04ca00c1f60d2b247e67961d79cdef89e0f0bd27b303f0",
+      "archive_url": "./heavypoly-1.31.11.zip",
+      "archive_size": 635250,
+      "archive_hash": "sha256:262f1e1ce179f64c7ad774a6ffa1e70c35d4e4bfb67522e475017e7001fe415c",
       "website": "https://github.com/azuubanana/HEAVYPOLY_Blender",
       "tags": [
         "Modeling",

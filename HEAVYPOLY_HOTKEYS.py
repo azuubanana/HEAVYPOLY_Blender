@@ -697,6 +697,9 @@ def register():
     disable_stock_tab()
 
     disable_specific_kmi('Sculpt', 'paint.brush_select','V','PRESS',False,False,False)
+    # 5.2 removed paint.brush_select; the stock Sculpt V is now
+    # brush.asset_activate (Draw brush), which otherwise wins over our View pie.
+    disable_specific_kmi('Sculpt', 'brush.asset_activate','V','PRESS',False,False,False)
     # V is HEAVYPOLY's view pie (3D View keymap), but in Edit Mode Blender's
     # stock Rip (mesh.rip_move) sits on plain V in the Mesh keymap, which is
     # checked first - so V ripped instead of opening the pie (and in face

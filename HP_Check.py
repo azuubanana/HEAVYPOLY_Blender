@@ -81,7 +81,16 @@ for p in bpy.utils.script_paths():
 
 def find_hp_files():
     found = {}
-    roots = list(bpy.utils.script_paths())
+    roots = []
+    # When run as a script (blender -b --python HP_Check.py) check the copy
+    # of the add-on sitting next to this file first, so a working copy can
+    # be verified before it is installed. Inside the installed extension
+    # this is simply the extension folder itself.
+    try:
+        roots.append(os.path.dirname(os.path.abspath(__file__)))
+    except NameError:
+        pass
+    roots += list(bpy.utils.script_paths())
     for extra in (bpy.utils.user_resource('SCRIPTS'), bpy.utils.resource_path('LOCAL')):
         if extra:
             roots.append(extra)
@@ -206,9 +215,20 @@ for mod_name in dir(bpy.ops):
 def op_exists(idname):
     if idname in available:
         return True
+    # NOT hasattr(): bpy.ops resolves lazily, so hasattr(bpy.ops.paint,
+    # "brush_select") is True even though 5.2 removed that operator - which
+    # is why this report said "missing operators: 0" while the Properties
+    # panel was raising on every redraw. Asking for the RNA type is the
+    # reliable test: it raises KeyError for an operator that does not exist.
     mod_name, _, op_name = idname.partition(".")
     mod = getattr(bpy.ops, mod_name, None)
-    return mod is not None and hasattr(mod, op_name)
+    if mod is None:
+        return False
+    try:
+        getattr(mod, op_name).get_rna_type()
+        return True
+    except Exception:
+        return False
 
 
 external = {k: v for k, v in referenced.items() if k not in hp_defined}

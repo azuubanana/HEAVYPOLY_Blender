@@ -92,6 +92,7 @@ def _addon_version():
 # from the defaults" counter must not blame them on the user.
 INTENTIONAL_DISABLES = (
     ("Object Non-modal", 'TAB'),   # stock Edit Mode toggle; Tab is subdiv
+    ("Sculpt", 'V'),               # stock brush.asset_activate (Draw); V is the View pie
 )
 
 

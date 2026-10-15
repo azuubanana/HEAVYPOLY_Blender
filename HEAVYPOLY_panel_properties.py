@@ -3,6 +3,27 @@ import random
 from bpy.props import *
 from bpy_extras.node_utils import find_node_input
 
+# Blender 5.2 removed paint.brush_select - brushes are assets now and are
+# picked with brush.asset_activate, the same call the stock Sculpt keymap
+# uses (scripts/presets/keyconfig/keymap_data/blender_default.py). The
+# identifiers are the brush names inside the bundled Essentials library.
+SCULPT_BRUSH_ASSETS = "brushes/essentials_brushes-mesh_sculpt.blend/Brush/"
+
+
+def sculpt_brush_button(layout, text, brush_name):
+    """Button that activates an Essentials sculpt brush by name.
+
+    layout.operator() returns None when the operator does not exist on this
+    Blender (that is how the old paint.brush_select buttons started raising
+    on every redraw) - fall back to a plain label instead of a traceback.
+    """
+    op = layout.operator('brush.asset_activate', text=text)
+    if op is None:
+        layout.label(text=text)
+        return
+    op.asset_library_type = 'ESSENTIALS'
+    op.relative_asset_identifier = SCULPT_BRUSH_ASSETS + brush_name
+
 #class HP_PT_transforms(bpy.types.Panel):
 #    bl_label = "HEAVYPOLY TRANSFORM"
 #    bl_space_type = 'PROPERTIES'
@@ -220,16 +241,16 @@ class HP_PT_object_properties(bpy.types.Panel):
                 sub = row.column()
                 sub.scale_x=.1
 
-                sub.operator('paint.brush_select',text = 'Snake Hook').sculpt_brush_type='SNAKE_HOOK'
-                sub.operator('paint.brush_select',text = 'Inflate').sculpt_brush_type='INFLATE'
-                sub.operator('paint.brush_select',text = 'Crease').sculpt_brush_type='CREASE'
-                sub.operator('paint.brush_select',text = 'Clay').sculpt_brush_type='CLAY'
+                sculpt_brush_button(sub, 'Snake Hook', 'Snake Hook')
+                sculpt_brush_button(sub, 'Inflate', 'Inflate/Deflate')
+                sculpt_brush_button(sub, 'Crease', 'Crease Polish')
+                sculpt_brush_button(sub, 'Clay', 'Clay')
                 sub = row.column()
                 sub.scale_x=.1
-                sub.operator('paint.brush_select',text = 'Draw').sculpt_brush_type='DRAW'
-                sub.operator('paint.brush_select',text = 'Grab').sculpt_brush_type='GRAB'
-                sub.operator('paint.brush_select',text = 'Flatten').sculpt_brush_type='FLATTEN'
-                sub.operator('paint.brush_select',text = 'Fill').sculpt_brush_type='FILL'
+                sculpt_brush_button(sub, 'Draw', 'Draw')
+                sculpt_brush_button(sub, 'Grab', 'Grab')
+                sculpt_brush_button(sub, 'Flatten', 'Flatten/Contrast')
+                sculpt_brush_button(sub, 'Fill', 'Fill/Deepen')
 #               col.operator('sculpt.dynamic_topology_toggle', text = 'Dynotopo')
                 row = col.row()
                 row.prop(sculpt.brush, "use_frontface")

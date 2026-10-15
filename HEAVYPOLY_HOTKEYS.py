@@ -577,6 +577,42 @@ def disable_stock_tab(retries=10):
             print("[HEAVYPOLY] no stock Tab entry found in Object Non-modal")
 
 
+def disable_stock_sculpt_v(retries=10):
+    """Switch off whatever Blender put on plain V in the Sculpt keymap.
+
+    Azusa's call: V in Sculpt Mode opens HEAVYPOLY's View pie, not a brush.
+    Up to 4.x the stock entry was paint.brush_select; 5.2 removed that
+    operator and binds brush.asset_activate (Draw brush) instead. Matching
+    by idname in the default keyconfig alone has silently missed before
+    (see disable_stock_tab), so: match by key, skip our own View pie
+    binding, cover both keyconfigs, and print what was switched off.
+    """
+    wm = bpy.context.window_manager
+    found = False
+    for kc in (wm.keyconfigs.get('Blender'), wm.keyconfigs.user):
+        if kc is None:
+            continue
+        km = kc.keymaps.get('Sculpt')
+        if km is None:
+            continue
+        for kmi in km.keymap_items:
+            if (kmi.type == 'V' and kmi.value == 'PRESS'
+                    and not kmi.shift and not kmi.ctrl and not kmi.alt
+                    and not kmi.oskey
+                    and kmi.idname != 'wm.call_menu_pie'):
+                found = True
+                if kmi.active:
+                    kmi.active = False
+                    print("[HEAVYPOLY] disabled %s on V (%s / %s)"
+                          % (kmi.idname, kc.name, km.name))
+    if not found:
+        if retries > 0:
+            bpy.app.timers.register(lambda: disable_stock_sculpt_v(retries - 1),
+                                    first_interval=0.2)
+        else:
+            print("[HEAVYPOLY] no stock V entry found in Sculpt")
+
+
 def get_active_kmi(space: str, **kwargs) -> bpy.types.KeyMapItem:
     kc = bpy.context.window_manager.keyconfigs.active
     km = kc.keymaps.get(space)
@@ -696,10 +732,13 @@ def register():
     # keyconfig too.
     disable_stock_tab()
 
+    # V in Sculpt Mode must open HEAVYPOLY's View pie (our own binding sits
+    # in the Sculpt keymap). 5.2 removed paint.brush_select and put
+    # brush.asset_activate (Draw brush) on V instead; disable_stock_sculpt_v()
+    # matches by key in both keyconfigs so it cannot silently miss.
     disable_specific_kmi('Sculpt', 'paint.brush_select','V','PRESS',False,False,False)
-    # 5.2 removed paint.brush_select; the stock Sculpt V is now
-    # brush.asset_activate (Draw brush), which otherwise wins over our View pie.
     disable_specific_kmi('Sculpt', 'brush.asset_activate','V','PRESS',False,False,False)
+    disable_stock_sculpt_v()
     # V is HEAVYPOLY's view pie (3D View keymap), but in Edit Mode Blender's
     # stock Rip (mesh.rip_move) sits on plain V in the Mesh keymap, which is
     # checked first - so V ripped instead of opening the pie (and in face

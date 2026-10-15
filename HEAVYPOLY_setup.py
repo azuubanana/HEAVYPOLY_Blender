@@ -93,6 +93,8 @@ def _addon_version():
 INTENTIONAL_DISABLES = (
     ("Object Non-modal", 'TAB'),   # stock Edit Mode toggle; Tab is subdiv
     ("Sculpt", 'V'),               # stock brush.asset_activate (Draw); V is the View pie
+    ("Object Mode", 'X'),          # stock delete; Shift+X is the symmetry pie
+    ("Screen", 'SPACE'),           # stock Ctrl+Space maximize area
 )
 
 

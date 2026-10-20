@@ -109,6 +109,20 @@ feature under beta testing stays on its own branch and is only merged into
 `master` at that final promotion — so `master`'s tracked source doesn't
 carry half-finished work while it's still being tried out.
 
+**Betas are not necessarily built from master.** 1.31.7–1.31.11 were built
+from the feature branches under test — a local `beta/<ver>-integration`
+branch merging every unmerged branch — with only `docs/beta` committed
+onto master. So before building a beta, diff the current beta zip against
+master to find its real source, and build from an integration of *all*
+branches under test, or the new beta silently drops a feature Azusa is
+still trying (1.31.2–1.31.5 lost the Shift+X fix that way). Before
+promoting, merge every source branch into a release branch and compare
+each file of the approved beta zip with the merged tree, CRLF-normalised:
+only the version in `blender_manifest.toml` may differ. Release 1.31.11
+(2026-10-21) merged `claude/xenodochial-satoshi-f55452` and
+`claude/shift-x-mirror-pie-77e5e6` that way, so master is the single
+source again until the next feature branch.
+
 ### The `.git`-in-the-zip trap
 
 `build_release.py` excludes a `.git` *directory*. In a normal clone that's
@@ -139,6 +153,8 @@ Things that cost hours to work out. Please don't re-derive them.
 | Paint panels erroring | 5.0 moved `unified_paint_settings` onto the mode-specific `Paint` struct |
 | Transparency flicker | 4.2 replaced `blend_method` with `surface_render_method`; `DITHERED` avoids sort artefacts, `BLENDED` does not |
 | GP operators missing | GPv3 (4.3) renamed `gpencil.*` to `grease_pencil.*`. There is no `_pick` variant of `select_linked` |
+| Sculpt brush buttons raising on every redraw | `paint.brush_select` is **gone in 5.2** (brush assets). `layout.operator()` returns `None` for an unknown idname, so the Properties panel's `draw()` raised each redraw. Use `brush.asset_activate` with `asset_library_type='ESSENTIALS'` and `relative_asset_identifier="brushes/essentials_brushes-mesh_sculpt.blend/Brush/<Name>"`; the names are the Essentials asset names (`Inflate/Deflate`, `Crease Polish`, `Flatten/Contrast`, `Fill/Deepen`), copied from Blender's own 5.2 keymap |
+| View pie greyed (numpad views, View Cam, Align), New Cam traceback | Not the add-on: the viewport's `region_3d.lock_rotation` — "Rotation" under N panel > View > View Lock, newly drawn in 5.2 right under "Camera to View", easy to flip by accident — fails every operator using `ED_operator_rv3d_user_region_poll` plus `camera_to_view`. New Cam now refuses with a readable error and the pie shows a lock hint |
 
 ### Traps specific to this add-on
 
@@ -188,6 +204,7 @@ Found and fixed so far:
 | `Shift+X` (Object Mode) | `object.delete` (the delete-globally copy) | Delete confirmation dialog instead of the symmetry pie — in Object Mode only, since the pie lives in the later-checked 3D View keymap. `disable_default_kmi` missed it twice over: it stops at the first `object.delete` match and never touches `keyconfigs.user`. Fixed by `disable_stock_delete()` (both keyconfigs, both X variants), same recipe as Tab |
 | `Ctrl+Space` (Screen) | `screen.screen_full_area` | Area maximized in every editor except the 3D View (where our select pie wins, region keymaps come first). Azusa asked for it off. `disable_stock_maximize()`, plain Ctrl+Space only; Maximize stays in the Areas pie |
 | `Alt+H` (Object Mode) | *missing* `object.hide_view_clear` | Not a conflict: on Azusa's 5.2 install the stock Object Mode Alt+H entry is simply absent from Key-Binding search (present in older versions); menu item and a hand-assigned Alt+H work. HEAVYPOLY now binds it itself (1.31.9). Cause of the disappearance unknown. HEAVYPOLY's Ctrl+Shift+H in Object Mode also didn't fire for her — unexplained, check if Alt+H from the add-on keyconfig fails the same way |
+| `V` (Sculpt) | `brush.asset_activate` (Draw brush) | Sculpt keymap is checked before 3D View, so V picked the Draw brush instead of the View pie. The old `paint.brush_select` disable matched nothing on 5.2. `disable_stock_sculpt_v()` matches plain V by key in both keyconfigs, same recipe as Tab |
 
 **How to diagnose:** Preferences > Keymap, `Key-Binding` tab, type the chord.
 Entries under *different* keymaps (Mesh vs Sculpt vs 3D View) are fine — those
@@ -221,6 +238,15 @@ install the report said "0 files found" while everything worked. It now
 also walks `user_resource('EXTENSIONS')` and the directories of loaded
 `bl_ext.*.HEAVYPOLY_*` modules, and matches module names on the last dotted
 part.
+
+**HP_Check's `op_exists()` trusted `hasattr`.** Same lazy-resolution trap
+as above: `hasattr(bpy.ops.paint, "brush_select")` is True on 5.2, so the
+report said "missing operators: 0" while the Properties panel was raising.
+Since 1.31.10 it calls `get_rna_type()`, which raises for an absent
+operator, and it also scans the folder next to the script so a working
+copy can be checked headless (`blender -b --python HP_Check.py`). The
+honest count turned up ~22 more absent operators referenced from guarded
+or dead code — see Open work.
 
 ### Cleaning up duplicates
 
@@ -364,8 +390,20 @@ the auto values (channel, background, cutoff) from the image.
   Missing (shared `HP Island Colors` material: Color Attribute node →
   Principled Base Color — only added when the object has zero materials).
   Re-running overwrites only that attribute; hand-painted attributes are
-  untouched. Source lives on `claude/eevee-random-color-per-island-8bcb09`
-  until promotion.
+  untouched. Promoted in Release 1.31.11 (October 2026) together with the
+  Shift+X fix, the Ctrl+Space disable, the Alt+H binding, the 5.2 sculpt
+  brush buttons, V in Sculpt and the New Cam view-lock message — all
+  confirmed by Azusa on beta 1.31.11.
+- **Dead operator references.** The fixed HP_Check lists ~22 operators the
+  add-on references that no longer exist in 5.2: legacy `gpencil.*`
+  (delete, editmode_toggle, layer_*, stroke_*), `grease_pencil.editmode_toggle`,
+  `grease_pencil.stroke_separate`, `mesh.duplicate_extrude`,
+  `mesh.loop_multi_select`, `object.gpencil_add`, `object.hide_viewport`,
+  `preferences.keyconfig_restore`, `scene.light_cache_bake/free`,
+  `time.cursor_set/end_frame_set/start_frame_set/view_all`. Most sit in
+  try/except or unused UI branches; `mesh.loop_multi_select` (HOTKEYS,
+  pie_selection, pie_specials) and the `time.*` hotkeys (HOTKEYS ~111)
+  look like live bindings that silently do nothing. Not yet triaged.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

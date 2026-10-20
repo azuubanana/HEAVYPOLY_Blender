@@ -185,6 +185,9 @@ Found and fixed so far:
 | `Ctrl+Shift+X` (paint modes) | `paint.sample_color` | Symmetry toggle never reached |
 | `Space` (Transform Modal) | `CONFIRM` | Y-axis lock impossible |
 | `Tab` (Object Non-modal) | `object.editmode_toggle` | First press entered Edit Mode (making the Outliner's mode-dot column appear); subdiv toggle only fired from the second press. Object Non-modal is checked before the generic 3D View keymap, but after Mesh — hence the press-count asymmetry |
+| `Shift+X` (Object Mode) | `object.delete` (the delete-globally copy) | Delete confirmation dialog instead of the symmetry pie — in Object Mode only, since the pie lives in the later-checked 3D View keymap. `disable_default_kmi` missed it twice over: it stops at the first `object.delete` match and never touches `keyconfigs.user`. Fixed by `disable_stock_delete()` (both keyconfigs, both X variants), same recipe as Tab |
+| `Ctrl+Space` (Screen) | `screen.screen_full_area` | Area maximized in every editor except the 3D View (where our select pie wins, region keymaps come first). Azusa asked for it off. `disable_stock_maximize()`, plain Ctrl+Space only; Maximize stays in the Areas pie |
+| `Alt+H` (Object Mode) | *missing* `object.hide_view_clear` | Not a conflict: on Azusa's 5.2 install the stock Object Mode Alt+H entry is simply absent from Key-Binding search (present in older versions); menu item and a hand-assigned Alt+H work. HEAVYPOLY now binds it itself (1.31.9). Cause of the disappearance unknown. HEAVYPOLY's Ctrl+Shift+H in Object Mode also didn't fire for her — unexplained, check if Alt+H from the add-on keyconfig fails the same way |
 
 **How to diagnose:** Preferences > Keymap, `Key-Binding` tab, type the chord.
 Entries under *different* keymaps (Mesh vs Sculpt vs 3D View) are fine — those
@@ -338,6 +341,31 @@ the auto values (channel, background, cutoff) from the image.
   never read the GPL source, see the module's own docstring. Switch back to
   recommending the real extension once its listing installs cleanly on 5.2
   again. Unverified in Blender; test via the beta channel before promoting.
+- **Random Island Colors.** Beta 1.31.5 (August 2026) added Color Per:
+  Island / Face — Face mode writes one flat color per polygon into the
+  same attribute on the `CORNER` domain (the attribute is recreated when
+  the domain changes, so switching modes just overwrites). 1.31.4: 1.31.2
+  confirmed
+  working by Azusa (bake + auto material on bare objects); she then asked
+  for the node to appear in the Shader Editor by itself. 1.31.3 auto-
+  connected it into Base Color; she preferred it merely *placed*, so
+  1.31.4 made it an enum, In Materials: Place Node (default — drop the
+  Color Attribute node next to the Principled BSDF, unconnected, material
+  look unchanged) / Connect (also replace Base Color's input) / Nothing.
+  Idempotent — re-runs reuse the node instead of stacking copies. EEVEE
+  still does not support the shader Geometry node's Random Per Island
+  output (Cycles only, confirmed against the 5.2 manual), so
+  `object.hp_random_island_colors` (HP Tools > Color) bakes a finished
+  random color per connected island into a `POINT`/`FLOAT_COLOR` color
+  attribute named `Island Colors` — union-find over the edges, hues walked
+  by golden ratio from a seeded start so few-island meshes still get
+  well-separated colors. Redo panel: Seed, Saturation, Brightness, Show in
+  Solid View (flips the viewport to Attribute coloring), Add Material If
+  Missing (shared `HP Island Colors` material: Color Attribute node →
+  Principled Base Color — only added when the object has zero materials).
+  Re-running overwrites only that attribute; hand-painted attributes are
+  untouched. Source lives on `claude/eevee-random-color-per-island-8bcb09`
+  until promotion.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

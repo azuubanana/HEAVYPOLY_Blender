@@ -31,6 +31,12 @@ class HP_MT_pie_view(Menu):
 		split = pie.split()
 		col = split.column(align=True)
 		col.scale_y=1.5
+		# 5.2's N panel > View > View Lock > Rotation locks region_3d; every
+		# stock view operator then fails poll and the buttons below grey out.
+		# Say why, rather than leaving a pie full of dead buttons.
+		rv3d = getattr(context.space_data, "region_3d", None)
+		if rv3d is not None and rv3d.lock_rotation:
+			col.label(text="View rotation locked (N > View > View Lock)", icon='LOCKED')
 		col.operator("view3d.view_camera", text="View Cam")
 		row = col.row(align=True)
 		row.alignment = 'CENTER'
@@ -156,7 +162,11 @@ class HP_OT_create_camera_at_view(bpy.types.Operator):
 			bpy.context.object.show_name = True
 			active_cam = bpy.context.active_object
 			bpy.context.scene.camera = active_cam
-			bpy.ops.view3d.camera_to_view()
+			if bpy.ops.view3d.camera_to_view.poll():
+				bpy.ops.view3d.camera_to_view()
+			else:
+				self.report({'WARNING'}, "Could not align the new camera to the view (camera_to_view not available here)")
+				print("[HEAVYPOLY] New Cam: view3d.camera_to_view.poll() failed - camera added but not aligned")
 			bpy.context.space_data.lock_camera = True
 
 			try:
@@ -176,6 +186,16 @@ class HP_OT_create_camera_at_view(bpy.types.Operator):
 			bpy.data.collections['Cameras'].objects.link(active_cam)
 			active_cam.select_set(state=True)
 			bpy.context.view_layer.objects.active = active_cam
+		# A locked viewport rotation (N panel > View > View Lock > Rotation, or
+		# quad view) makes view3d.camera_to_view fail poll, which used to
+		# traceback AFTER the camera was added and leave a stray camera behind.
+		space = context.space_data
+		rv3d = getattr(space, "region_3d", None)
+		if (rv3d is not None and rv3d.lock_rotation) or getattr(space, "region_quadviews", None):
+			self.report({'ERROR'}, "View rotation is locked - untick N panel > View > View Lock > Rotation")
+			print("[HEAVYPOLY] New Cam cancelled: region_3d.lock_rotation=%s, quadviews=%d"
+				% (getattr(rv3d, "lock_rotation", None), len(getattr(space, "region_quadviews", ()))))
+			return {'CANCELLED'}
 		if bpy.context.area.spaces.active.region_3d.view_perspective == 'CAMERA':
 			print('Switching to Right View')
 			bpy.ops.view3d.view_axis(type='RIGHT')

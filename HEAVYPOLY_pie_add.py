@@ -184,8 +184,8 @@ class HP_OT_add_primitive(Operator):
                 bpy.ops.mesh.primitive_uv_sphere_add(align=align_mode)
 
             elif t == 'Grease_Pencil':
-                bpy.ops.object.gpencil_add()
-                bpy.ops.object.mode_set(mode='GPENCIL_PAINT')
+                bpy.ops.object.grease_pencil_add(type='EMPTY')
+                bpy.ops.object.mode_set(mode='PAINT_GREASE_PENCIL')
             elif t == 'Curve':
                 bpy.ops.curve.primitive_nurbs_path_add()
                 bpy.ops.object.editmode_toggle()

@@ -50,7 +50,7 @@ def Keymap_Heavypoly():
 #Window
     km = kc.keymaps.new('Window', space_type='EMPTY', region_type='WINDOW', modal=False)
     Global_Keys()
-    kmi = km.keymap_items.new('object.hide_viewport', 'H', 'PRESS')
+    # object.hide_viewport does not exist (5.2); H is Object Mode's own hide.
     kmi = km.keymap_items.new('wm.save_homefile', 'U', 'PRESS', ctrl=True)
     kmi = km.keymap_items.new('transform.translate', 'SPACE', 'PRESS')
     #kmi = km.keymap_items.new('object.modal_translate', 'SPACE', 'PRESS')
@@ -108,10 +108,11 @@ def Keymap_Heavypoly():
     print(f"Added keymap item: {kmi.idname} ({kmi.type})")
 
 
-    kmi = km.keymap_items.new('time.cursor_set', k_select, 'PRESS', alt = True)
-    kmi = km.keymap_items.new('time.start_frame_set', 'S', 'PRESS')
-    kmi = km.keymap_items.new('time.end_frame_set', 'E', 'PRESS')
-    kmi = km.keymap_items.new('time.view_all', k_viewfit, 'PRESS', ctrl=True, shift=True)
+    # 5.2: the time.* operators are gone (anim.* / action.* replace them).
+    kmi = km.keymap_items.new('anim.change_frame', k_select, 'PRESS', alt = True)
+    kmi = km.keymap_items.new('anim.start_frame_set', 'S', 'PRESS')
+    kmi = km.keymap_items.new('anim.end_frame_set', 'E', 'PRESS')
+    kmi = km.keymap_items.new('action.view_all', k_viewfit, 'PRESS', ctrl=True, shift=True)
 
 # Map Graph Editor
     km = kc.keymaps.new('Graph Editor', space_type='GRAPH_EDITOR', region_type='WINDOW', modal=False)
@@ -205,7 +206,8 @@ def Keymap_Heavypoly():
     kmi = km.keymap_items.new('mesh.select_next_item', 'Z', 'PRESS', shift=True)
     kmi = km.keymap_items.new('mesh.select_prev_item', 'WHEELOUTMOUSE', 'PRESS', shift=True)
     kmi = km.keymap_items.new('mesh.edgering_select', k_select, 'DOUBLE_CLICK', alt=True).properties.extend = False
-    kmi = km.keymap_items.new('mesh.loop_multi_select', k_select, 'DOUBLE_CLICK', alt=True, shift=True)
+    # 5.2 split mesh.loop_multi_select into select_edge_loop_multi / select_edge_ring_multi.
+    kmi = km.keymap_items.new('mesh.select_edge_loop_multi', k_select, 'DOUBLE_CLICK', alt=True, shift=True)
     kmi = km.keymap_items.new('mesh.loop_select', k_select, 'PRESS', alt=True, shift=True).properties.extend = True
     kmi = km.keymap_items.new('mesh.loop_select', k_select, 'PRESS', alt=True).properties.extend = False
     kmi = km.keymap_items.new('mesh.normals_make_consistent', 'N', 'PRESS', ctrl=True).properties.inside = False

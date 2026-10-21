@@ -173,7 +173,9 @@ class HP_MT_pie_select(Menu):
 ####### Draw with GP
 
 GP_MATERIALS = ("Pencil", "Halftone", "Fill")
-GP_SURFACE_OFFSET = 0.015
+# Lift strokes a little off the surface so lumpy low-poly meshes do not
+# poke through them (Blender's own default is 0.0).
+GP_SURFACE_OFFSET = 0.03
 
 
 def _ensure_gp_material(name):
@@ -255,10 +257,7 @@ class HP_OT_draw_with_gp(bpy.types.Operator):
 
         location = target.matrix_world.translation.copy() if target else context.scene.cursor.location.copy()
 
-        try:
-            bpy.ops.object.grease_pencil_add(type='EMPTY', align='WORLD', location=location)
-        except AttributeError:
-            bpy.ops.object.gpencil_add(type='EMPTY', align='WORLD', location=location)
+        bpy.ops.object.grease_pencil_add(type='EMPTY', align='WORLD', location=location)
 
         gp = context.active_object
         if gp is None:
@@ -279,9 +278,13 @@ class HP_OT_draw_with_gp(bpy.types.Operator):
             gp.parent = target
             gp.matrix_parent_inverse = target.matrix_world.inverted()
 
-        # Respect scene depth: strokes on the far side of a mesh stay hidden.
+        # Keep Blender's default 2D depth order. '3D' sorted every stroke
+        # fragment against the mesh, so on a lumpy low-poly surface the
+        # parts that dipped under it vanished and strokes came out as a
+        # chain of chopped blobs (Azusa, 2026-10-21; switching the object
+        # back to 2D fixed it instantly). Objects still occlude the GP.
         try:
-            gp.data.stroke_depth_order = '3D'
+            gp.data.stroke_depth_order = '2D'
         except Exception as e:
             print("[HEAVYPOLY] could not set stroke depth order: %r" % (e,))
         gp.show_in_front = False
@@ -442,7 +445,7 @@ class HP_OT_SelectSmartLinkedAndLoop(bpy.types.Operator):
 
     def invoke(self, context, event):
         if tuple(bpy.context.scene.tool_settings.mesh_select_mode) == (False, True, False):
-            bpy.ops.mesh.loop_multi_select()
+            bpy.ops.mesh.select_edge_loop_multi()   # 5.2 name of loop_multi_select
         else:
             bpy.ops.mesh.select_linked(delimit={'SEAM'})
         return {'FINISHED'}

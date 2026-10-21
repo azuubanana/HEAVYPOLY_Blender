@@ -777,9 +777,12 @@ class HP_OT_setup_reset_keymap(Operator):
         # anything deleted from the stock keymap stayed deleted and no amount
         # of re-registering HEAVYPOLY would bring it back.
         try:
-            bpy.ops.preferences.keyconfig_restore()
+            # preferences.keyconfig_restore does not exist in 5.2; restoring
+            # every keymap of the user keyconfig is what it used to do.
+            for km in bpy.context.window_manager.keyconfigs.user.keymaps:
+                km.restore_to_default()
         except Exception as e:
-            print("[HEAVYPOLY] keyconfig_restore failed: %r" % (e,))
+            print("[HEAVYPOLY] keymap restore failed: %r" % (e,))
 
         try:
             from . import HEAVYPOLY_HOTKEYS

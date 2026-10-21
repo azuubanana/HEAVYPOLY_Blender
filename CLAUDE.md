@@ -429,6 +429,14 @@ the auto values (channel, background, cutoff) from the image.
   Material Preview with shadows/cavity on the default screen and the
   N-panel overlays. Edit the .blend headless (`blender -b HP_Startup.blend
   --python-expr ...` then `wm.save_mainfile()`), it keeps all screens.
+- **GP Sculpt starts on the Grab brush (beta 1.31.15, Oct 2026).** Azusa's
+  request. The "first tool" in GP Sculpt is the scene's saved GP sculpt brush
+  (`tool_settings.gpencil_sculpt_paint.brush_asset_reference`), which
+  HP_Startup.blend had as the stock Smooth. Changed in the startup file only,
+  headless: `--factory-startup HP_Startup.blend`, enter SCULPT_GREASE_PENCIL
+  on the GPencil object, `brush.asset_activate` Grab from the ESSENTIALS
+  library, back to Object Mode, save, delete the `.blend1`. Azusa declined a
+  runtime switch for existing files (「これからの startup だけでいい」).
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

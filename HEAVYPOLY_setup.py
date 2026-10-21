@@ -27,6 +27,11 @@ STARTUP_BACKUP_NAME = "HP_startup_backup.blend"
 
 # Pie menus should appear instantly, not unfold.
 PIE_ANIMATION_TIMEOUT = 0
+# Blender 4.x/5.x default is the circular HSV picker; Azusa (Oct 2026) wants the
+# square one she and the students know from 3.6 (hue across, saturation up,
+# value bar below). Any of the five Color Picker Type values is harmless.
+COLOR_PICKER_TYPE = 'SQUARE_HS'
+
 
 
 # ---------------------------------------------------------------- paths
@@ -264,9 +269,15 @@ def _enable_node_wrangler(report=None):
 
 
 def _apply_preferences(report=None):
-    """Turn off the pie unfold animation; turn on Node Wrangler."""
+    """Pie unfold animation off, square color picker, Node Wrangler on."""
     try:
-        bpy.context.preferences.view.pie_animation_timeout = PIE_ANIMATION_TIMEOUT
+        view = bpy.context.preferences.view
+        view.pie_animation_timeout = PIE_ANIMATION_TIMEOUT
+        try:
+            view.color_picker_type = COLOR_PICKER_TYPE
+            print("[HEAVYPOLY] color picker type -> %s" % view.color_picker_type)
+        except Exception as e:
+            print("[HEAVYPOLY] could not set color_picker_type: %r" % (e,))
         _enable_node_wrangler(report)
         bpy.ops.wm.save_userpref()
         return True

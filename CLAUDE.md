@@ -437,6 +437,10 @@ the auto values (channel, background, cutoff) from the image.
   on the GPencil object, `brush.asset_activate` Grab from the ESSENTIALS
   library, back to Object Mode, save, delete the `.blend1`. Azusa declined a
   runtime switch for existing files (「これからの startup だけでいい」).
+- **Square color picker (beta 1.31.16, Oct 2026).** `Apply Preferences` sets
+  `preferences.view.color_picker_type = 'SQUARE_HS'` (Square HS + V, the 3.6
+  look) because the 5.x circular default greys toward the centre and Azusa
+  found it hard to use. Users can still change it in Preferences > Interface.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

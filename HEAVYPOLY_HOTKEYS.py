@@ -693,6 +693,48 @@ def disable_stock_sculpt_v(retries=10):
             print("[HEAVYPOLY] no stock V entry found in Sculpt")
 
 
+
+def disable_stock_gp_drag(retries=10):
+    """Switch off Blender's drag-to-move in the Grease Pencil edit keymap.
+
+    Azusa's call (Oct 2026): dragging in GP Edit Mode should box-select,
+    like it does on meshes. The stock "Grease Pencil Edit Mode" keymap
+    carries transform.translate on a plain LMB click-drag (from
+    _template_items_transform_actions), and mode keymaps are checked
+    before the generic 3D View one, so it swallowed the drag before
+    HEAVYPOLY's view3d.select_box binding could see it - whatever tool
+    was highlighted in the toolbar. Object Mode / Curve / Curves / Pose
+    already get the same treatment. Same recipe as disable_stock_tab():
+    match by key in both keyconfigs, skip our own items, print what was
+    switched off, and retry briefly in case the keymap is not built yet.
+    """
+    wm = bpy.context.window_manager
+    found = False
+    for kc in (wm.keyconfigs.get('Blender'), wm.keyconfigs.user):
+        if kc is None:
+            continue
+        for km_name in GP_EDIT_KEYMAPS:
+            km = kc.keymaps.get(km_name)
+            if km is None:
+                continue
+            for kmi in km.keymap_items:
+                if (kmi.type == 'LEFTMOUSE' and kmi.value == 'CLICK_DRAG'
+                        and not kmi.shift and not kmi.ctrl and not kmi.alt
+                        and not kmi.oskey
+                        and kmi.idname == 'transform.translate'):
+                    found = True
+                    if kmi.active:
+                        kmi.active = False
+                        print("[HEAVYPOLY] disabled %s on LMB drag (%s / %s)"
+                              % (kmi.idname, kc.name, km.name))
+    if not found:
+        if retries > 0:
+            bpy.app.timers.register(lambda: disable_stock_gp_drag(retries - 1),
+                                    first_interval=0.2)
+        else:
+            print("[HEAVYPOLY] no stock LMB drag entry found in GP Edit Mode")
+
+
 def get_active_kmi(space: str, **kwargs) -> bpy.types.KeyMapItem:
     kc = bpy.context.window_manager.keyconfigs.active
     km = kc.keymaps.get(space)
@@ -820,6 +862,8 @@ def register():
     disable_specific_kmi('Sculpt', 'paint.brush_select','V','PRESS',False,False,False)
     disable_specific_kmi('Sculpt', 'brush.asset_activate','V','PRESS',False,False,False)
     disable_stock_sculpt_v()
+    # GP Edit Mode: stock LMB drag = transform.translate hid our box select.
+    disable_stock_gp_drag()
     # V is HEAVYPOLY's view pie (3D View keymap), but in Edit Mode Blender's
     # stock Rip (mesh.rip_move) sits on plain V in the Mesh keymap, which is
     # checked first - so V ripped instead of opening the pie (and in face

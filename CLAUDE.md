@@ -121,7 +121,7 @@ each file of the approved beta zip with the merged tree, CRLF-normalised:
 only the version in `blender_manifest.toml` may differ. Release 1.31.11
 (2026-10-21) merged `claude/xenodochial-satoshi-f55452` and
 `claude/shift-x-mirror-pie-77e5e6` that way, so master is the single
-source again until the next feature branch. Beta 1.31.13 is built from
+source again until the next feature branch. Beta 1.31.14 is built from
 `claude/dead-ops-gp-depth-startup-lite`, which already contains the
 1.31.12 branch (`claude/heavypoly-config-diagnosis-a81be8`, GP Edit drag
 box-select) — promote that one branch to get both.
@@ -137,6 +137,16 @@ was tried from a Claude Code worktree. Both `EXCLUDE_DIRS` and
 file list — a reminder that "the file count matches" is a cheaper check
 than it looks, but "open the zip and read the file list" is the one that
 actually catches this class of bug.
+
+### The `.blend1`-in-the-zip trap
+
+Saving `HP_Startup.blend` from Blender (also headless via
+`wm.save_mainfile()`) leaves a `HP_Startup.blend1` backup next to it.
+`git add -A` committed it and `build_release.py` zipped it: beta 1.31.13
+came out as **35 files, 0.8 MB** instead of 34 / 0.6 MB — the count check
+caught it. `.blend1` is now in `EXCLUDE_SUFFIXES` and in `.gitignore`;
+1.31.14 is the clean rebuild. Whenever the file count or size moves,
+list the archive before pushing.
 
 ---
 
@@ -400,7 +410,7 @@ the auto values (channel, background, cutoff) from the image.
   Shift+X fix, the Ctrl+Space disable, the Alt+H binding, the 5.2 sculpt
   brush buttons, V in Sculpt and the New Cam view-lock message — all
   confirmed by Azusa on beta 1.31.11.
-- **Dead operator references — fixed in beta 1.31.13 (October 2026).**
+- **Dead operator references — fixed in beta 1.31.14 (October 2026).**
   The honest HP_Check had listed 22 operators that no longer exist in 5.2;
   all call sites were ported (see the API table) and `HP_Check` now reports
   0 missing. The Materials popup's GP layer list was rebuilt for GPv3 on
@@ -413,7 +423,7 @@ the auto values (channel, background, cutoff) from the image.
   and Julien's Macs were not. `HP_Startup.blend` had EEVEE viewport samples
   at **512** (Blender default 16), Raytracing and Fast GI on, and the
   default workspace in Material Preview — every view change re-rendered
-  up to 512 samples. 1.31.13 ships the startup with viewport samples 16,
+  up to 512 samples. 1.31.14 ships the startup with viewport samples 16,
   Raytracing and Fast GI off (render samples stay 512). Not yet confirmed
   on the slow machine; if a Mac is still slow, the next suspects are
   Material Preview with shadows/cavity on the default screen and the

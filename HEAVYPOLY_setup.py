@@ -95,6 +95,7 @@ INTENTIONAL_DISABLES = (
     ("Sculpt", 'V'),               # stock brush.asset_activate (Draw); V is the View pie
     ("Object Mode", 'X'),          # stock delete; Shift+X is the symmetry pie
     ("Screen", 'SPACE'),           # stock Ctrl+Space maximize area
+    ("Grease Pencil Edit Mode", 'LEFTMOUSE'),  # stock drag-to-move; drag is box select
 )
 
 

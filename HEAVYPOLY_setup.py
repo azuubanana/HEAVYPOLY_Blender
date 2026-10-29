@@ -32,6 +32,16 @@ PIE_ANIMATION_TIMEOUT = 0
 # value bar below). Any of the five Color Picker Type values is harmless.
 COLOR_PICKER_TYPE = 'SQUARE_HS'
 
+# Preference defaults HEAVYPOLY sets, tagged with the version that introduced
+# each one. Apply Preferences sets them all. On an update, only the entries
+# newer than the last applied version are set, once, so a new default reaches
+# everyone without pressing anything (Azusa, Oct 2026), while a setting
+# someone changed afterwards is never overridden by later updates.
+VIEW_PREFERENCE_DEFAULTS = (
+    ("1.0.0", "pie_animation_timeout", PIE_ANIMATION_TIMEOUT),
+    ("1.31.16", "color_picker_type", COLOR_PICKER_TYPE),
+)
+
 
 
 # ---------------------------------------------------------------- paths
@@ -268,16 +278,51 @@ def _enable_node_wrangler(report=None):
     return False
 
 
+def _apply_view_preferences(since=None):
+    """Set HEAVYPOLY's preference defaults; only those newer than `since`."""
+    view = bpy.context.preferences.view
+    for version, attr, value in VIEW_PREFERENCE_DEFAULTS:
+        if since and _version_tuple(version) <= _version_tuple(since):
+            continue
+        try:
+            setattr(view, attr, value)
+            print("[HEAVYPOLY] preferences.view.%s -> %r"
+                  % (attr, getattr(view, attr)))
+        except Exception as e:
+            print("[HEAVYPOLY] could not set preferences.view.%s: %r"
+                  % (attr, e))
+
+
+def _apply_new_preferences():
+    """After an update, set the preference defaults added since the last
+    applied version - without waiting for Apply Preferences. Timer."""
+    prefs = _prefs()
+    if prefs is None:
+        return 0.5
+    if not prefs.applied_version:
+        return None  # brand-new install; the first-run setup covers it
+    current = _addon_version()
+    baseline = prefs.applied_prefs_version or prefs.applied_version
+    if _version_tuple(baseline) >= _version_tuple(current):
+        return None
+    print("[HEAVYPOLY] update %s -> %s: applying new preference defaults"
+          % (baseline, current))
+    _apply_view_preferences(since=baseline)
+    prefs.applied_prefs_version = current
+    try:
+        bpy.ops.wm.save_userpref()
+    except Exception as e:
+        print("[HEAVYPOLY] could not save preferences: %r" % (e,))
+    return None
+
+
 def _apply_preferences(report=None):
     """Pie unfold animation off, square color picker, Node Wrangler on."""
     try:
-        view = bpy.context.preferences.view
-        view.pie_animation_timeout = PIE_ANIMATION_TIMEOUT
-        try:
-            view.color_picker_type = COLOR_PICKER_TYPE
-            print("[HEAVYPOLY] color picker type -> %s" % view.color_picker_type)
-        except Exception as e:
-            print("[HEAVYPOLY] could not set color_picker_type: %r" % (e,))
+        _apply_view_preferences()
+        prefs = _prefs()
+        if prefs:
+            prefs.applied_prefs_version = _addon_version()
         _enable_node_wrangler(report)
         bpy.ops.wm.save_userpref()
         return True
@@ -1090,6 +1135,9 @@ class HEAVYPOLY_Preferences(AddonPreferences):
     # from applied_version, which tracks the setup state - closing the popup
     # must not silence the "Apply All to get the new keymap" banner.
     seen_version: StringProperty(default="")
+    # Last version whose preference defaults were applied (by Apply
+    # Preferences or automatically after an update).
+    applied_prefs_version: StringProperty(default="")
     save_reminder: BoolProperty(
         name="Save Reminder",
         description="Pop up a reminder when unsaved changes sit around "
@@ -1245,6 +1293,7 @@ def register():
     # Blender is still booting when add-ons register, so defer the dialogs.
     bpy.app.timers.register(_first_run_setup, first_interval=1.0)
     bpy.app.timers.register(_whats_new_popup, first_interval=2.0)
+    bpy.app.timers.register(_apply_new_preferences, first_interval=1.5)
     if not bpy.app.background:
         _save_state["last_save"] = time.time()
         if _hp_on_save not in bpy.app.handlers.save_post:
@@ -1255,7 +1304,8 @@ def register():
 
 
 def unregister():
-    for timer in (_first_run_setup, _whats_new_popup, _save_reminder_tick):
+    for timer in (_first_run_setup, _whats_new_popup, _apply_new_preferences,
+                  _save_reminder_tick):
         if bpy.app.timers.is_registered(timer):
             bpy.app.timers.unregister(timer)
     for handler_list, handler in ((bpy.app.handlers.save_post, _hp_on_save),

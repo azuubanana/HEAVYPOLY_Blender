@@ -441,6 +441,16 @@ the auto values (channel, background, cutoff) from the image.
   `preferences.view.color_picker_type = 'SQUARE_HS'` (Square HS + V, the 3.6
   look) because the 5.x circular default greys toward the centre and Azusa
   found it hard to use. Users can still change it in Preferences > Interface.
+  Beta 1.31.17: preference defaults live in `VIEW_PREFERENCE_DEFAULTS`,
+  tagged with the version that introduced them; `_apply_new_preferences()`
+  (startup timer) sets the ones newer than `applied_prefs_version` once
+  after an update, so students get a new default without pressing
+  anything, and a later change of theirs is never overridden. Add new
+  view defaults to that table, not to `_apply_preferences` directly.
+- **Startup Raytracing back on (beta 1.31.17).** Azusa compared 4.5 and
+  5.2 side by side: without Raytracing + Fast GI (AO method) the 5.2
+  viewport has no ambient occlusion and looks flat. Both are on again;
+  viewport samples stay at 16, which was the real cost on the slow Mac.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

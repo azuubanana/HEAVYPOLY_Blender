@@ -169,7 +169,7 @@ Things that cost hours to work out. Please don't re-derive them.
 | GP operators missing | GPv3 (4.3) renamed `gpencil.*` to `grease_pencil.*`. There is no `_pick` variant of `select_linked` |
 | Sculpt brush buttons raising on every redraw | `paint.brush_select` is **gone in 5.2** (brush assets). `layout.operator()` returns `None` for an unknown idname, so the Properties panel's `draw()` raised each redraw. Use `brush.asset_activate` with `asset_library_type='ESSENTIALS'` and `relative_asset_identifier="brushes/essentials_brushes-mesh_sculpt.blend/Brush/<Name>"`; the names are the Essentials asset names (`Inflate/Deflate`, `Crease Polish`, `Flatten/Contrast`, `Fill/Deepen`), copied from Blender's own 5.2 keymap |
 | View pie greyed (numpad views, View Cam, Align), New Cam traceback | Not the add-on: the viewport's `region_3d.lock_rotation` — "Rotation" under N panel > View > View Lock, newly drawn in 5.2 right under "Camera to View", easy to flip by accident — fails every operator using `ED_operator_rv3d_user_region_poll` plus `camera_to_view`. New Cam now refuses with a readable error and the pie shows a lock hint |
-| Boolean cutter visible (and casting a shadow) in Rendered viewport | `hide_render` only covers the final render; the viewport engine still draws a WIRE object. The old `cycles_visibility.*` lines were commented out since 3.0 removed them. Beta 1.31.18 sets `Object.visible_camera/shadow/diffuse/glossy/transmission/volume_scatter = False` on every `_Cutter` (also retro-fixes old cutters on the next Ctrl+B boolean) |
+| Boolean cutter visible (and casting a shadow) in Rendered viewport | `hide_render` only covers the final render; the viewport engine still draws a WIRE object. The old `cycles_visibility.*` lines were commented out since 3.0 removed them. Beta 1.31.18 sets `Object.visible_camera/shadow/diffuse/glossy/transmission/volume_scatter = False` on every `_Cutter` (also retro-fixes old cutters on the next Ctrl+B boolean) | Beta 1.31.19: Toggle Cutters no longer tracebacks in a file without a Cutters collection, and the dead `vertex_colors.active_index` line (printed `Invalid loop byte attribute index 0` on every non-live boolean) is gone. Every other pie item was exercised headless on 5.2.2 and passed |
 | GP strokes drawn from the Selection pie came out as a chain of chopped blobs | `stroke_depth_order = '3D'` on a lumpy low-poly surface: every stroke fragment is depth-sorted against the mesh, so the parts that dip under it vanish. Blender's default `'2D'` draws the stroke whole (meshes still occlude the object). Azusa confirmed by flipping the object's Viewport Display > Stroke Depth Order; `Draw with GP` now leaves it at 2D and lifts the surface offset to 0.03 |
 | Hotkeys, pie slots and popup buttons that silently did nothing | Operators renamed or removed by 4.x–5.2: `mesh.loop_multi_select` → `select_edge_loop_multi` / `select_edge_ring_multi`; `time.*` → `anim.change_frame`, `anim.start/end_frame_set`, `action.view_all`; `scene.light_cache_bake/free` → `object.lightprobe_cache_bake/free(subset='ALL')`; `gpencil.layer_*` / `stroke_change_color` / `stroke_separate` → `grease_pencil.layer_*` / `stroke_material_set` / `separate(mode='SELECTED')`; `object.gpencil_add` → `grease_pencil_add`; `preferences.keyconfig_restore` → `keymap.restore_to_default()` per user keymap. `mesh.duplicate_extrude` and `object.hide_viewport` never existed in 4.x/5.x and were removed (the Uber popup slot now holds Duplicate) |
 
@@ -466,8 +466,16 @@ the auto values (channel, background, cutoff) from the image.
 
 ## Working style that has been effective
 
-Blender cannot be run from the assistant side, so **every fix is a hypothesis
-until Azusa confirms it**. What has worked:
+**Blender CAN be run headless from the assistant side** (found October 2026):
+a portable 5.2.2 lives at `C:\Users\Azusa\Downloads\blender-5.2.2-windows-x64\blender-5.2.2-windows-x64\blender.exe`.
+`blender -b --factory-startup --python HEAVYPOLY_pie_boolean.py --python
+<test>.py` registers one module (its `__main__` guard calls `register()`) and
+lets a test script drive the operators on real data - that is how the whole
+Boolean pie was verified for 1.31.19 (21 cases). Use it for anything that
+doesn't need a window: API existence (`get_rna_type()`, `hasattr` on RNA
+structs), operator logic, startup-file edits. Invoke-only operators need an
+`execute` shim in the test. Anything visual (viewport shading, pies, keymaps
+firing) is still **a hypothesis until Azusa confirms it**. What has worked:
 
 1. State the suspected cause explicitly before changing anything.
 2. Prefer changes that report what they did — the symmetry operator prints

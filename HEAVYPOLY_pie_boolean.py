@@ -176,6 +176,36 @@ class HP_OT_boolean_toggle_cutters(bpy.types.Operator):
 #                        else:
 #                            mod.solver = 'BMESH'
 #        return {'FINISHED'}
+# Ray-visibility flags that hide a cutter from the viewport's Rendered /
+# Material Preview shading. `hide_render` only covers the final render; the
+# viewport render engine (EEVEE and Cycles alike) still draws and shadows a
+# WIRE-displayed object, so the hole shows a cutter inside it and a cutter
+# shadow on the base. These are the 3.0+ replacements for the removed
+# `cycles_visibility.*` properties and are honoured by EEVEE Next too.
+CUTTER_RAY_VISIBILITY = (
+    "visible_camera",
+    "visible_shadow",
+    "visible_diffuse",
+    "visible_glossy",
+    "visible_transmission",
+    "visible_volume_scatter",
+)
+
+
+def hide_cutter_from_render_view(ob):
+    """Make a boolean cutter invisible to the render engine in every view."""
+    ob.hide_render = True
+    missing = []
+    for prop in CUTTER_RAY_VISIBILITY:
+        try:
+            setattr(ob, prop, False)
+        except (AttributeError, TypeError):
+            missing.append(prop)
+    if missing:
+        print("[HEAVYPOLY] cutter %s: no such ray-visibility props on this "
+              "Blender: %s" % (ob.name, ", ".join(missing)))
+
+
 class HP_OT_boolean_live(bpy.types.Operator):
     bl_idname = "view3d.hp_boolean_live"
     bl_label = ""
@@ -247,13 +277,7 @@ class HP_OT_boolean_live(bpy.types.Operator):
                     bpy.context.view_layer.objects.active = inset
                 cutter.display_type = self.displaytype
                 cutter.show_bounds = self.showbounds
-                cutter.hide_render = True
-                # cutter.cycles_visibility.camera = False
-                # cutter.cycles_visibility.transmission = False
-                # cutter.cycles_visibility.diffuse = False
-                # cutter.cycles_visibility.scatter = False
-                # cutter.cycles_visibility.glossy = False
-                # cutter.cycles_visibility.shadow = False
+                hide_cutter_from_render_view(cutter)
                 cutter.select_set(state=False)
 
         def create_bool(bool_operation, live):
@@ -319,6 +343,8 @@ class HP_OT_boolean_live(bpy.types.Operator):
             bpy.context.scene.collection.children.link(Cutcol)
         cutters = [obj for obj in bpy.data.objects if "_Cutter" in obj.name]
         for cutter in cutters:
+            # Also fixes cutters made before 1.31.18, which only had hide_render.
+            hide_cutter_from_render_view(cutter)
             try:
                 try:
                     bpy.context.scene.collection.objects.unlink(cutter)

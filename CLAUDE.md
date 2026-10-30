@@ -121,7 +121,10 @@ each file of the approved beta zip with the merged tree, CRLF-normalised:
 only the version in `blender_manifest.toml` may differ. Release 1.31.11
 (2026-10-21) merged `claude/xenodochial-satoshi-f55452` and
 `claude/shift-x-mirror-pie-77e5e6` that way, so master is the single
-source again until the next feature branch.
+source again until the next feature branch. Beta 1.31.14 is built from
+`claude/dead-ops-gp-depth-startup-lite`, which already contains the
+1.31.12 branch (`claude/heavypoly-config-diagnosis-a81be8`, GP Edit drag
+box-select) — promote that one branch to get both.
 
 ### The `.git`-in-the-zip trap
 
@@ -134,6 +137,16 @@ was tried from a Claude Code worktree. Both `EXCLUDE_DIRS` and
 file list — a reminder that "the file count matches" is a cheaper check
 than it looks, but "open the zip and read the file list" is the one that
 actually catches this class of bug.
+
+### The `.blend1`-in-the-zip trap
+
+Saving `HP_Startup.blend` from Blender (also headless via
+`wm.save_mainfile()`) leaves a `HP_Startup.blend1` backup next to it.
+`git add -A` committed it and `build_release.py` zipped it: beta 1.31.13
+came out as **35 files, 0.8 MB** instead of 34 / 0.6 MB — the count check
+caught it. `.blend1` is now in `EXCLUDE_SUFFIXES` and in `.gitignore`;
+1.31.14 is the clean rebuild. Whenever the file count or size moves,
+list the archive before pushing.
 
 ---
 
@@ -155,6 +168,8 @@ Things that cost hours to work out. Please don't re-derive them.
 | GP operators missing | GPv3 (4.3) renamed `gpencil.*` to `grease_pencil.*`. There is no `_pick` variant of `select_linked` |
 | Sculpt brush buttons raising on every redraw | `paint.brush_select` is **gone in 5.2** (brush assets). `layout.operator()` returns `None` for an unknown idname, so the Properties panel's `draw()` raised each redraw. Use `brush.asset_activate` with `asset_library_type='ESSENTIALS'` and `relative_asset_identifier="brushes/essentials_brushes-mesh_sculpt.blend/Brush/<Name>"`; the names are the Essentials asset names (`Inflate/Deflate`, `Crease Polish`, `Flatten/Contrast`, `Fill/Deepen`), copied from Blender's own 5.2 keymap |
 | View pie greyed (numpad views, View Cam, Align), New Cam traceback | Not the add-on: the viewport's `region_3d.lock_rotation` — "Rotation" under N panel > View > View Lock, newly drawn in 5.2 right under "Camera to View", easy to flip by accident — fails every operator using `ED_operator_rv3d_user_region_poll` plus `camera_to_view`. New Cam now refuses with a readable error and the pie shows a lock hint |
+| GP strokes drawn from the Selection pie came out as a chain of chopped blobs | `stroke_depth_order = '3D'` on a lumpy low-poly surface: every stroke fragment is depth-sorted against the mesh, so the parts that dip under it vanish. Blender's default `'2D'` draws the stroke whole (meshes still occlude the object). Azusa confirmed by flipping the object's Viewport Display > Stroke Depth Order; `Draw with GP` now leaves it at 2D and lifts the surface offset to 0.03 |
+| Hotkeys, pie slots and popup buttons that silently did nothing | Operators renamed or removed by 4.x–5.2: `mesh.loop_multi_select` → `select_edge_loop_multi` / `select_edge_ring_multi`; `time.*` → `anim.change_frame`, `anim.start/end_frame_set`, `action.view_all`; `scene.light_cache_bake/free` → `object.lightprobe_cache_bake/free(subset='ALL')`; `gpencil.layer_*` / `stroke_change_color` / `stroke_separate` → `grease_pencil.layer_*` / `stroke_material_set` / `separate(mode='SELECTED')`; `object.gpencil_add` → `grease_pencil_add`; `preferences.keyconfig_restore` → `keymap.restore_to_default()` per user keymap. `mesh.duplicate_extrude` and `object.hide_viewport` never existed in 4.x/5.x and were removed (the Uber popup slot now holds Duplicate) |
 
 ### Traps specific to this add-on
 
@@ -201,6 +216,7 @@ Found and fixed so far:
 | `Ctrl+Shift+X` (paint modes) | `paint.sample_color` | Symmetry toggle never reached |
 | `Space` (Transform Modal) | `CONFIRM` | Y-axis lock impossible |
 | `Tab` (Object Non-modal) | `object.editmode_toggle` | First press entered Edit Mode (making the Outliner's mode-dot column appear); subdiv toggle only fired from the second press. Object Non-modal is checked before the generic 3D View keymap, but after Mesh — hence the press-count asymmetry |
+| `LMB drag` (Grease Pencil Edit Mode) | `transform.translate` (from `_template_items_transform_actions`) | Drag moved the stroke instead of box-selecting, whatever tool was highlighted - mode keymaps are checked before the generic 3D View keymap that holds our `view3d.select_box`. Object Mode / Curve / Curves / Pose already had the same item disabled; `disable_stock_gp_drag()` (by key, both keyconfigs) does it for GP since 1.31.12 |
 | `Shift+X` (Object Mode) | `object.delete` (the delete-globally copy) | Delete confirmation dialog instead of the symmetry pie — in Object Mode only, since the pie lives in the later-checked 3D View keymap. `disable_default_kmi` missed it twice over: it stops at the first `object.delete` match and never touches `keyconfigs.user`. Fixed by `disable_stock_delete()` (both keyconfigs, both X variants), same recipe as Tab |
 | `Ctrl+Space` (Screen) | `screen.screen_full_area` | Area maximized in every editor except the 3D View (where our select pie wins, region keymaps come first). Azusa asked for it off. `disable_stock_maximize()`, plain Ctrl+Space only; Maximize stays in the Areas pie |
 | `Alt+H` (Object Mode) | *missing* `object.hide_view_clear` | Not a conflict: on Azusa's 5.2 install the stock Object Mode Alt+H entry is simply absent from Key-Binding search (present in older versions); menu item and a hand-assigned Alt+H work. HEAVYPOLY now binds it itself (1.31.9). Cause of the disappearance unknown. HEAVYPOLY's Ctrl+Shift+H in Object Mode also didn't fire for her — unexplained, check if Alt+H from the add-on keyconfig fails the same way |
@@ -394,16 +410,47 @@ the auto values (channel, background, cutoff) from the image.
   Shift+X fix, the Ctrl+Space disable, the Alt+H binding, the 5.2 sculpt
   brush buttons, V in Sculpt and the New Cam view-lock message — all
   confirmed by Azusa on beta 1.31.11.
-- **Dead operator references.** The fixed HP_Check lists ~22 operators the
-  add-on references that no longer exist in 5.2: legacy `gpencil.*`
-  (delete, editmode_toggle, layer_*, stroke_*), `grease_pencil.editmode_toggle`,
-  `grease_pencil.stroke_separate`, `mesh.duplicate_extrude`,
-  `mesh.loop_multi_select`, `object.gpencil_add`, `object.hide_viewport`,
-  `preferences.keyconfig_restore`, `scene.light_cache_bake/free`,
-  `time.cursor_set/end_frame_set/start_frame_set/view_all`. Most sit in
-  try/except or unused UI branches; `mesh.loop_multi_select` (HOTKEYS,
-  pie_selection, pie_specials) and the `time.*` hotkeys (HOTKEYS ~111)
-  look like live bindings that silently do nothing. Not yet triaged.
+- **Dead operator references — fixed in beta 1.31.14 (October 2026).**
+  The honest HP_Check had listed 22 operators that no longer exist in 5.2;
+  all call sites were ported (see the API table) and `HP_Check` now reports
+  0 missing. The Materials popup's GP layer list was rebuilt for GPv3 on
+  `template_grease_pencil_layer_tree()` with a plain-list fallback if the
+  tree template refuses to draw inside the popup — watch the console for
+  `[HEAVYPOLY] layer tree template failed` the first time it opens.
+  Unverified in the UI until Azusa tests the beta.
+- **Startup file viewport cost (October 2026).** A student's new MacBook
+  was unusably slow with HEAVYPOLY while vanilla Blender was fine; Azusa's
+  and Julien's Macs were not. `HP_Startup.blend` had EEVEE viewport samples
+  at **512** (Blender default 16), Raytracing and Fast GI on, and the
+  default workspace in Material Preview — every view change re-rendered
+  up to 512 samples. 1.31.14 ships the startup with viewport samples 16,
+  Raytracing and Fast GI off (render samples stay 512). Not yet confirmed
+  on the slow machine; if a Mac is still slow, the next suspects are
+  Material Preview with shadows/cavity on the default screen and the
+  N-panel overlays. Edit the .blend headless (`blender -b HP_Startup.blend
+  --python-expr ...` then `wm.save_mainfile()`), it keeps all screens.
+- **GP Sculpt starts on the Grab brush (beta 1.31.15, Oct 2026).** Azusa's
+  request. The "first tool" in GP Sculpt is the scene's saved GP sculpt brush
+  (`tool_settings.gpencil_sculpt_paint.brush_asset_reference`), which
+  HP_Startup.blend had as the stock Smooth. Changed in the startup file only,
+  headless: `--factory-startup HP_Startup.blend`, enter SCULPT_GREASE_PENCIL
+  on the GPencil object, `brush.asset_activate` Grab from the ESSENTIALS
+  library, back to Object Mode, save, delete the `.blend1`. Azusa declined a
+  runtime switch for existing files (「これからの startup だけでいい」).
+- **Square color picker (beta 1.31.16, Oct 2026).** `Apply Preferences` sets
+  `preferences.view.color_picker_type = 'SQUARE_HS'` (Square HS + V, the 3.6
+  look) because the 5.x circular default greys toward the centre and Azusa
+  found it hard to use. Users can still change it in Preferences > Interface.
+  Beta 1.31.17: preference defaults live in `VIEW_PREFERENCE_DEFAULTS`,
+  tagged with the version that introduced them; `_apply_new_preferences()`
+  (startup timer) sets the ones newer than `applied_prefs_version` once
+  after an update, so students get a new default without pressing
+  anything, and a later change of theirs is never overridden. Add new
+  view defaults to that table, not to `_apply_preferences` directly.
+- **Startup Raytracing back on (beta 1.31.17).** Azusa compared 4.5 and
+  5.2 side by side: without Raytracing + Fast GI (AO method) the 5.2
+  viewport has no ambient occlusion and looks flat. Both are on again;
+  viewport samples stay at 16, which was the real cost on the slow Mac.
 - **Old Releases.** `v1.2.1` on the Releases page still has the pre-extension
   layout. Delete it or mark it deprecated so nobody installs it by hand.
 - **UV workflow.** Unrelated to the add-on so far, but the reason several of

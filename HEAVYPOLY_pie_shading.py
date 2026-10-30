@@ -68,10 +68,11 @@ class HP_MT_pie_shading(Menu):
 #        row.operator("shading.bg_wire", text='BG Wire')
         row = col.row(align=True)
         row.scale_y=1.5
-        row.operator("scene.light_cache_bake", text='Bake Lighting')
+        # EEVEE Next dropped the light cache; probes bake per object now.
+        row.operator("object.lightprobe_cache_bake", text='Bake Light Probes').subset = 'ALL'
         row = col.row(align=True)
         row.scale_y=1.5
-        row.operator("scene.light_cache_free", text='Free Lighting')
+        row.operator("object.lightprobe_cache_free", text='Free Light Probes').subset = 'ALL'
 
         #BOTTOM RIGHT
         split = pie.split()

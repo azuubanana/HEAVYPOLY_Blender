@@ -117,8 +117,9 @@ class HP_OT_subdivide_cylinder(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}  # enable undo for the operator.
 
     def execute(self, context):
-        bpy.ops.mesh.loop_multi_select(ring=False)
-        bpy.ops.mesh.loop_multi_select(ring=True)
+        # 5.2 split mesh.loop_multi_select into two operators.
+        bpy.ops.mesh.select_edge_loop_multi()
+        bpy.ops.mesh.select_edge_ring_multi()
         bpy.ops.mesh.bevel(offset_type='PERCENT', offset_pct=25, affect='EDGES')
         return {'FINISHED'}
 

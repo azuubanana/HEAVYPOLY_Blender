@@ -28,7 +28,9 @@ class HP_MT_popup_uber(bpy.types.Menu):
         #Top Left
         layout.operator("transform.shrink_fatten",text = 'Move')
         #Top Right
-        layout.operator("mesh.duplicate_extrude", text = 'Extrude')
+        # mesh.duplicate_extrude never existed in 4.x/5.x; Blender skipped the
+        # slot and every later item shifted one position.
+        layout.operator("mesh.duplicate_move", text = 'Duplicate')
         #Bottom Left
         layout.operator('popup.hp_render',text = 'Render Settings')
         #Bottom Right

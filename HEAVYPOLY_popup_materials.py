@@ -90,8 +90,10 @@ class HP_MT_popup_materials(bpy.types.Operator):
         col.separator()
 
 
-        if actob.type == 'GPENCIL':
-            col.operator('gpencil.stroke_change_color', icon='NONE', text='Apply')
+        if actob.type in {'GPENCIL', 'GREASEPENCIL'}:
+            # 5.2: gpencil.stroke_change_color is gone; this assigns the
+            # active material slot to the selected strokes.
+            col.operator('grease_pencil.stroke_material_set', icon='NONE', text='Apply')
         else:
             col.operator('3dview.material_new', icon='NONE', text='New Material')
         col.operator('3dview.material_copy', icon='NONE', text='Duplicate Material')
@@ -231,24 +233,39 @@ class HP_MT_popup_materials(bpy.types.Operator):
 
             col2.label(text='')
             col2.label(text='                                  /// LAYERS')
-            gpd = context.gpencil_data
-            row = col2.row()
-            sub = row.column()
-            layer_rows = 7
-            sub.template_list("GPENCIL_UL_layer", "", gpd, "layers", gpd.layers, "active_index",
-                              rows=layer_rows, reverse=True)
-            sub = row.column()
-            sub.operator("gpencil.layer_add", icon='ADD', text="")
-
-            sub.operator("gpencil.layer_remove", icon='REMOVE', text="")
-            sub.operator("gpencil.layer_move", icon='TRIA_UP', text="").type = 'UP'
-            sub.operator("gpencil.layer_move", icon='TRIA_DOWN', text="").type = 'DOWN'
-            sub.operator("gpencil.layer_merge", icon='TRIA_DOWN_BAR', text="")
-            sub.operator("gpencil.layer_isolate", icon='GREASEPENCIL', text="").affect_visibility = False
-            sub.operator("gpencil.layer_isolate", icon='RESTRICT_VIEW_OFF', text="").affect_visibility = True
-            sub.menu("GPENCIL_MT_layer_specials", icon='ERROR', text="")
-            gpl = context.active_gpencil_layer
-            col2.prop(gpl, "opacity", text="Layer Opacity", slider=True)
+            # 5.2 (GPv3): context.gpencil_data, GPENCIL_UL_layer and the
+            # gpencil.layer_* operators are gone. Layers are a tree now.
+            gpd = getattr(context, "grease_pencil", None)
+            gpob = context.object
+            if gpd is None and gpob is not None and gpob.type == 'GREASEPENCIL':
+                gpd = gpob.data
+            if gpd is not None:
+                row = col2.row()
+                try:
+                    row.template_grease_pencil_layer_tree()
+                except Exception as e:
+                    # The tree template may refuse to draw inside a popup;
+                    # fall back to a plain list of the layers.
+                    print("[HEAVYPOLY] layer tree template failed: %r" % (e,))
+                    lst = row.column(align=True)
+                    for layer in reversed(list(gpd.layers)):
+                        lrow = lst.row(align=True)
+                        lrow.prop(layer, "name", text="", emboss=False,
+                                  icon='RADIOBUT_ON' if layer == gpd.layers.active else 'RADIOBUT_OFF')
+                        lrow.prop(layer, "hide", text="", emboss=False)
+                        lrow.prop(layer, "lock", text="", emboss=False)
+                sub = row.column(align=True)
+                sub.operator_context = 'EXEC_DEFAULT'
+                sub.operator("grease_pencil.layer_add", icon='ADD', text="")
+                sub.operator("grease_pencil.layer_remove", icon='REMOVE', text="")
+                sub.operator("grease_pencil.layer_move", icon='TRIA_UP', text="").direction = 'UP'
+                sub.operator("grease_pencil.layer_move", icon='TRIA_DOWN', text="").direction = 'DOWN'
+                sub.operator("grease_pencil.layer_merge", icon='TRIA_DOWN_BAR', text="").mode = 'ACTIVE'
+                sub.operator("grease_pencil.layer_isolate", icon='GREASEPENCIL', text="").affect_visibility = False
+                sub.operator("grease_pencil.layer_isolate", icon='RESTRICT_VIEW_OFF', text="").affect_visibility = True
+                gpl = gpd.layers.active
+                if gpl is not None:
+                    col2.prop(gpl, "opacity", text="Layer Opacity", slider=True)
 
 class HP_OT_gp_stroke(bpy.types.Operator):
     bl_idname = '3dview.gp_type'

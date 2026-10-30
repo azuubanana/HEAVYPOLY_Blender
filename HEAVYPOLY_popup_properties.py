@@ -239,8 +239,9 @@ class HP_MT_popup_properties(bpy.types.Operator):
                     col.prop(probe, "influence_distance", text="Size")
                 col.prop(probe, "falloff")
                 col.prop(probe, "intensity")
-            col2.operator('scene.light_cache_bake')
-            col2.operator('scene.light_cache_free')
+            # EEVEE Next: scene.light_cache_* are gone, probes bake per object.
+            col2.operator('object.lightprobe_cache_bake', text='Bake Light Probes').subset = 'ALL'
+            col2.operator('object.lightprobe_cache_free', text='Free Light Probes').subset = 'ALL'
 
 
         elif ob.type == 'MESH':

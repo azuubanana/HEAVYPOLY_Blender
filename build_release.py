@@ -63,7 +63,7 @@ EXCLUDE_DIRS = {"docs", ".git", ".github", "__pycache__", ".vscode", ".idea",
                 ".claude"}
 EXCLUDE_FILES = {"build_release.py", "CLAUDE.md", ".gitignore", ".DS_Store",
                  ".git"}
-EXCLUDE_SUFFIXES = (".zip", ".pyc")
+EXCLUDE_SUFFIXES = (".zip", ".pyc", ".blend1")   # .blend1 = Blender save backup
 
 
 # ---------------------------------------------------------------- manifest

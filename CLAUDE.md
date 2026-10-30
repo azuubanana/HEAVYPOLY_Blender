@@ -121,10 +121,11 @@ each file of the approved beta zip with the merged tree, CRLF-normalised:
 only the version in `blender_manifest.toml` may differ. Release 1.31.11
 (2026-10-21) merged `claude/xenodochial-satoshi-f55452` and
 `claude/shift-x-mirror-pie-77e5e6` that way, so master is the single
-source again until the next feature branch. Beta 1.31.14 is built from
-`claude/dead-ops-gp-depth-startup-lite`, which already contains the
-1.31.12 branch (`claude/heavypoly-config-diagnosis-a81be8`, GP Edit drag
-box-select) — promote that one branch to get both.
+source again until the next feature branch. Release 1.31.17 (2026-10-30)
+promoted the whole 1.31.12–1.31.17 beta line the same way from
+`claude/heavypoly-config-diagnosis-a81be8` (which had been fast-forwarded
+onto `claude/dead-ops-gp-depth-startup-lite`), so master is again the
+single source.
 
 ### The `.git`-in-the-zip trap
 
@@ -417,7 +418,8 @@ the auto values (channel, background, cutoff) from the image.
   `template_grease_pencil_layer_tree()` with a plain-list fallback if the
   tree template refuses to draw inside the popup — watch the console for
   `[HEAVYPOLY] layer tree template failed` the first time it opens.
-  Unverified in the UI until Azusa tests the beta.
+  Promoted in Release 1.31.17 (October 2026); the GP layer list in the
+  Materials popup was still unverified at that point.
 - **Startup file viewport cost (October 2026).** A student's new MacBook
   was unusably slow with HEAVYPOLY while vanilla Blender was fine; Azusa's
   and Julien's Macs were not. `HP_Startup.blend` had EEVEE viewport samples
@@ -447,7 +449,7 @@ the auto values (channel, background, cutoff) from the image.
   after an update, so students get a new default without pressing
   anything, and a later change of theirs is never overridden. Add new
   view defaults to that table, not to `_apply_preferences` directly.
-- **Startup Raytracing back on (beta 1.31.17).** Azusa compared 4.5 and
+- **Startup Raytracing back on (beta 1.31.17, promoted in Release 1.31.17).** Azusa compared 4.5 and
   5.2 side by side: without Raytracing + Fast GI (AO method) the 5.2
   viewport has no ambient occlusion and looks flat. Both are on again;
   viewport samples stay at 16, which was the real cost on the slow Mac.

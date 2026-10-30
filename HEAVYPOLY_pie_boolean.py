@@ -141,12 +141,12 @@ class HP_OT_boolean_toggle_cutters(bpy.types.Operator):
     bl_label = "hp_boolean_toggle_cutters"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
-        for o in bpy.data.collections['Cutters'].objects:
-            if o.hide_get() == False:
-                o.hide_set(True)
-
-            else:
-                o.hide_set(False)
+        col = bpy.data.collections.get('Cutters')
+        if col is None or not col.objects:
+            self.report({'INFO'}, "No cutters in this file yet")
+            return {'CANCELLED'}
+        for o in col.objects:
+            o.hide_set(not o.hide_get())
         return {'FINISHED'}
 #class HP_Boolean_Toggle_Solver(bpy.types.Operator):
 #    bl_idname = "view3d.hp_boolean_toggle_bool_solver"
@@ -313,9 +313,6 @@ class HP_OT_boolean_live(bpy.types.Operator):
                     cutter.select_set(state=True)
                     bpy.ops.object.delete(use_global=False)
                     base.select_set(state=True)
-                    i = base.data.vertex_colors.active_index
-                    base.data.vertex_colors.active_index = i + 1
-                    # bpy.ops.mesh.vertex_color_remove()
 
         if context.active_object.mode != 'OBJECT':
             isedit = True
